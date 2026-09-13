@@ -12,24 +12,24 @@
  *   { t:'freeform', prompt, context?, rubric:{want:[],avoid:[],minWords,sample} }
  */
 
-import smallTalk from './courses/small-talk.js';
-import conversationFlow from './courses/conversation-flow.js';
-import charisma from './courses/charisma.js';
-import storytelling from './courses/storytelling.js';
-import dating from './courses/dating.js';
-import readingPeople from './courses/reading-people.js';
-import groups from './courses/groups.js';
-import hardConversations from './courses/hard-conversations.js';
+import talkingToThem from './courses/talking-to-them.js';
+import texting from './courses/texting.js';
+import signals from './courses/signals.js';
+import makingAMove from './courses/making-a-move.js';
+import nerves from './courses/nerves.js';
+import school from './courses/school.js';
+import parties from './courses/parties.js';
+import likeable from './courses/likeable.js';
 
 export const COURSES = [
-  smallTalk,
-  conversationFlow,
-  charisma,
-  storytelling,
-  dating,
-  readingPeople,
-  groups,
-  hardConversations,
+  talkingToThem,
+  texting,
+  signals,
+  makingAMove,
+  nerves,
+  school,
+  parties,
+  likeable,
 ];
 
 // Stamp back-references so a lesson always knows its course.

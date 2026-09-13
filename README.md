@@ -2,7 +2,9 @@
 
 A pocket suite of small, sharp apps — free, offline-capable, and installable to an iPhone Home Screen. No accounts, no server, no subscriptions.
 
-The first app is **Gleam**: a Duolingo-style trainer for social skills, replicating the paid app of the same name (bite-sized scenario lessons, streaks, XP, a weekly league, AI practice conversations) with the paywall removed and the content rewritten.
+The first app is **Gleam**: a Duolingo-style trainer for social skills, replicating the paid app of the same name (bite-sized scenario lessons, streaks, XP, a weekly league, AI practice conversations) with the paywall removed.
+
+**The content is written for one specific person**: a 13–14 year old who is completely fine with their friends and falls apart around people they like romantically. Every example is set at school, in a group chat, or at someone's house — there is no careers advice, no networking, no bars, no dating apps. If that is not you, the lessons in `data/gleam/courses/` are plain JS and rewriting them is the whole job.
 
 ---
 
@@ -36,22 +38,22 @@ Every deploy stamps a fresh build id into `sw.js` (that's what the browser notic
 
 **Onboarding** — 27 steps, close to the real app's: goal quiz, blocker diagnostic, three situational questions, a self-rating slider, an animated "building your profile" pass, a social-baseline score reveal on a dial, a comparison chart, a 90-day projection, and the signature **press-and-hold fingerprint commitment**. No paywall — the real app's funnel ends in a subscription; this one ends in lesson one.
 
-**40 lessons across 8 courses**, ordered by the goals you pick in onboarding:
+**40 lessons / 243 exercises across 8 courses**, reordered by the goals you pick in onboarding:
 
 | Course | What it drills |
 |---|---|
-| Small Talk Foundations | openers, open questions, free information, awkward pauses, exits |
-| Conversation Flow | threading, depth levels, statements over questions, energy matching, reviving |
-| Charisma & Presence | warmth × competence, body language, voice and pace, attention, status |
-| Storytelling & Humour | story shape, specific detail, stock stories, humour mechanics, reading the room |
-| Dating & Flirting | intent, approaching, reading interest, first dates, rejection |
-| Reading People | listening, body signals, validation, names and details, subtext |
-| Groups & Social Energy | joining circles, holding the floor, including people, hosting, social battery |
-| Hard Conversations | saying no, boundaries, disagreement, criticism, repair |
+| Talking To Them | why you go blank, openers, keeping it going, being funny when nervous, their friends being there |
+| Texting Them | starting from nothing, reply speed, not being dry, stories and streaks, getting off the phone |
+| Do They Like Me? | what actually counts as a signal, reading texts, reading them in person, spotting a no, how to stop guessing |
+| Making A Move | why nothing ever happens, asking them to hang out, saying it, if they say no, if they say yes |
+| Overthinking & Nerves | the 2am replay, cringe attacks, calming down beforehand, the spotlight effect, doing it scared |
+| School Days | the person you sit next to, lunch, corridors, group projects, getting into a group |
+| Parties & Hangouts | walking in, joining a group, when your friends vanish, group games, leaving well |
+| Being Someone People Like | warmth over impressive, listening visibly, telling a story, trying too hard, banter that goes too far |
 
 **Eight exercise types** — concept cards, best-reply multiple choice, select-all, true/false, ordering, fill-the-gap, matching pairs, and free-text answers scored against a rubric with a model answer. Anything you get wrong is pushed back onto the end of the lesson, which is the mechanic that makes drilling actually work.
 
-**Practice** — six branching conversations (coffee queue, a party where you know one person, a first date, a friend who isn't okay, the person you wanted to meet, saying no to your manager). Every reply is scored on warmth, curiosity, confidence and clarity, and each one tells you *why* it lands or doesn't.
+**Practice** — six branching conversations that run as one arc with the same person: sat next to them in class → the class group chat → DMs at half nine → they're at the same party → asking them to hang out → and one for when they say no. Every reply is scored on warmth, curiosity, confidence and clarity, and each one tells you *why* it lands or doesn't.
 
 **Gamification** — XP and a daily goal, streaks with auto-spending streak freezes (earned every three good days, two max), 13 achievements, a 12-week activity heatmap, and a weekly league with promotion and demotion.
 
@@ -69,6 +71,8 @@ There is no backend to hide a key behind, so:
 
 Model is selectable (Opus 5 / Sonnet 5 / Haiku 4.5); roleplay turns run at low effort so replies come back fast and cost a fraction of a cent.
 
+The roleplay system prompt states the user's age and holds the character to it: peers only, school-level conversation, and the character refuses and disengages if the chat is steered anywhere explicit or unsafe. That is in `js/apps/gleam/ai.js` if you want to read it.
+
 ---
 
 ## Honest notes
@@ -77,6 +81,7 @@ Model is selectable (Opus 5 / Sonnet 5 / Haiku 4.5); roleplay turns run at low e
 - **The baseline score is not a clinical measure.** It's a weighted read of your own onboarding answers, there to give the number somewhere to move from.
 - **Data lives in one browser.** No account, no sync, no analytics. `Profile → Export a backup` writes a JSON file; **Restore** reads it back. That's how you move to a new phone.
 - **Hearts are off by default.** The real Duolingo mechanic is in there as a toggle, but wrong answers re-queueing is what actually teaches, so nothing blocks you by default.
+- **Rewriting the course library bumps `CONTENT_VERSION`** in `js/apps/gleam/state.js`. On the next load, progress pointing at lessons that no longer exist is pruned and the plan re-derives — XP, streak and achievements are kept, because they were still earned.
 
 ---
 

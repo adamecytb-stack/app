@@ -6,7 +6,7 @@ export const APPS = [
     id: 'gleam',
     name: 'Gleam',
     tagline: 'Daily reps for social skills',
-    blurb: 'Five minutes a day of small talk, charisma and conversation drills — with a streak that makes you actually show up.',
+    blurb: 'Five minutes a day on the hard rooms — talking to people you like, texting, parties, and the overthinking afterwards.',
     status: 'live',
     home: '/gleam',
     accent: {

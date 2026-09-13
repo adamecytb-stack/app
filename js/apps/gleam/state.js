@@ -4,7 +4,12 @@
 import { slice, save } from '../../core/store.js';
 import { COURSES, lessonById, courseById, allLessons } from '../../../data/gleam/courses.js';
 
+/* Bumped when the course library is rewritten, so progress pointing at
+ * lessons that no longer exist gets cleaned up instead of inflating stats. */
+const CONTENT_VERSION = 2;
+
 export const g = slice('gleam', {
+  contentVersion: CONTENT_VERSION,
   onboarded: false,
   onboardStep: 0,
   profile: {
@@ -38,6 +43,26 @@ export const g = slice('gleam', {
   stats: { lessonsDone: 0, exercisesDone: 0, correct: 0, perfect: 0, practiceRuns: 0, aiRuns: 0 },
   league: null,
 });
+
+/* Drop progress for lessons and scenarios that no longer exist. XP, streak
+ * and achievements are kept — those were still earned. */
+(function migrateContent() {
+  if (g.contentVersion === CONTENT_VERSION) return;
+
+  const known = new Set(allLessons().map((l) => l.id));
+  let dropped = 0;
+  for (const id of Object.keys(g.progress)) {
+    if (!known.has(id)) { delete g.progress[id]; dropped += 1; }
+  }
+  if (dropped) {
+    g.stats.lessonsDone = Math.max(0, g.stats.lessonsDone - dropped);
+    g.stats.perfect = 0;
+  }
+  g.practice = {};
+  g.courseOrder = [];
+  g.contentVersion = CONTENT_VERSION;
+  save();
+}());
 
 /* ── Dates ─────────────────────────────────────────────────── */
 

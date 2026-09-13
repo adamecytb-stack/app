@@ -76,12 +76,12 @@ const picked = (key) => (draft) => Boolean(draft[key]);
 /* ── Scoring ───────────────────────────────────────────────── */
 
 const SIT_WEIGHT = {
-  'I would leave early': 0, 'I would find one person and cling on': 1, 'I would manage, quietly': 2, 'I would actually enjoy it': 3,
-  'I freeze completely': 0, 'I get awkward and over-talk': 1, 'I am fine until I like them': 2, 'I am pretty comfortable': 3,
-  'I never speak': 0, 'I speak only if asked directly': 1, 'I contribute sometimes': 2, 'I say what I think': 3,
+  'I would find a reason not to go': 0, 'I would stick to the people I know': 1, 'I would manage, quietly': 2, 'I would actually enjoy it': 3,
+  'I completely freeze': 0, 'I get awkward and talk too much': 1, 'I am fine until it actually matters': 2, 'I am pretty comfortable': 3,
+  'I never put my hand up': 0, 'Only if I get asked directly': 1, 'Sometimes, if I am sure': 2, 'I just say it': 3,
 };
 
-const FREQ_WEIGHT = { 'Almost every conversation': 0, 'Most days': 1, 'A few times a week': 2, 'Now and then': 3 };
+const FREQ_WEIGHT = { 'Basically every time': 0, 'Most days': 1, 'A few times a week': 2, 'Now and then': 3 };
 
 export function computeScore(draft) {
   const sits = [draft.sitParty, draft.sitAttraction, draft.sitMeeting]
@@ -192,8 +192,8 @@ function compareBody(draft) {
   const score = computeScore(draft);
   const rows = [
     { label: 'You, today', value: score, color: 'linear-gradient(90deg,#DC8709,#FFC763)' },
-    { label: 'Typical adult', value: 58, color: 'var(--ink-500)' },
-    { label: 'People who practise daily', value: 84, color: 'linear-gradient(90deg,#2C9C74,#4FD8A8)' },
+    { label: 'Most people your age', value: 55, color: 'var(--ink-500)' },
+    { label: 'The ones who make it look easy', value: 84, color: 'linear-gradient(90deg,#2C9C74,#4FD8A8)' },
   ];
   const node = el('div', { class: 'bars' }, rows.map((r) => {
     const fill = el('div', { class: 'bars__fill', style: { background: r.color } });
@@ -342,15 +342,16 @@ function planBody(draft) {
 
 /** Order courses so the ones matching their stated goals come first. */
 export function planOrder(draft) {
+  const has = (goal) => draft.goals.includes(goal);
   const weight = {
-    'small-talk': draft.goals.includes('Make conversation easier') ? 3 : 0,
-    'conversation-flow': draft.goals.includes('Make conversation easier') ? 2 : 0,
-    charisma: draft.goals.includes('Be more magnetic') ? 3 : 0,
-    storytelling: draft.goals.includes('Be more magnetic') ? 2 : 0,
-    dating: draft.goals.includes('Dating and flirting') ? 3 : 0,
-    'reading-people': draft.goals.includes('Understand people better') ? 3 : 0,
-    groups: draft.goals.includes('Handle groups and parties') ? 3 : 0,
-    'hard-conversations': draft.goals.includes('Hold my ground at work') ? 3 : 0,
+    'talking-to-them': (has('Talk to someone I like') ? 3 : 0) + (has('Stop overthinking everything') ? 1 : 0),
+    texting: (has('Get better at texting them') ? 3 : 0) + (has('Talk to someone I like') ? 1 : 0),
+    signals: (has('Work out if they like me') ? 3 : 0),
+    'making-a-move': (has('Actually ask someone out') ? 3 : 0),
+    nerves: (has('Stop overthinking everything') ? 3 : 0),
+    school: (has('Be better at school stuff') ? 3 : 0),
+    parties: (has('Handle parties and groups') ? 3 : 0),
+    likeable: (has('Be someone people like more') ? 3 : 0),
   };
   return [...COURSES].sort((a, b) => (weight[b.id] ?? 0) - (weight[a.id] ?? 0) || a.index - b.index);
 }
@@ -396,18 +397,18 @@ const STEPS = [
     build: () => el('div', { class: 'ob__hero' }, [
       (() => { const i = icon('sparkle', 108); i.classList.add('ob__glyph'); return i; })(),
       el('h1', { class: 'ob__heroTitle', text: 'Gleam' }),
-      el('p', { class: 'ob__heroSub', text: 'Five minutes a day of social reps. Small talk, charisma, dating, difficult conversations — practised, not read about.' }),
+      el('p', { class: 'ob__heroSub', text: 'Five minutes a day. Talking to people you like, texting, parties, and the overthinking afterwards — practised, not read about.' }),
     ]),
   },
   {
     eyebrow: 'The premise',
-    title: 'Charisma is a <em>skill</em>, not a personality',
-    sub: 'People who are good in a room are running a small set of learnable moves. You can be taught them, and then you can drill them.',
+    title: 'You are not bad at this. <em>You are out of practice</em>',
+    sub: 'You can talk to your friends for hours. The skill is already there — it just falls apart in the rooms where it matters. That part is trainable.',
     cta: 'Makes sense',
     build: () => el('div', { class: 'stack gap-12' }, [
-      el('div', { class: 'card' }, [el('b', { text: 'It is trainable' }), el('p', { class: 'small', text: 'Conversation is a motor skill with rules. Reps beat insight.' })]),
-      el('div', { class: 'card' }, [el('b', { text: 'It is specific' }), el('p', { class: 'small', text: '"Be more confident" is useless. "Answer, then add a hook" is not.' })]),
-      el('div', { class: 'card' }, [el('b', { text: 'It compounds' }), el('p', { class: 'small', text: 'One better conversation a week changes who you know in a year.' })]),
+      el('div', { class: 'card' }, [el('b', { text: 'It is a stakes problem' }), el('p', { class: 'small', text: 'Easy with friends, impossible with them. Same you — different pressure.' })]),
+      el('div', { class: 'card' }, [el('b', { text: 'It is specific' }), el('p', { class: 'small', text: '“Be confident” is useless. “Ask about the weird word they used” is not.' })]),
+      el('div', { class: 'card' }, [el('b', { text: 'It only goes down with reps' }), el('p', { class: 'small', text: 'Every time you avoid it, it gets slightly harder. Every time you do it, slightly easier.' })]),
     ]),
   },
   {
@@ -416,10 +417,10 @@ const STEPS = [
     cta: 'Continue',
     valid: picked('source'),
     build: single('source', [
+      { glyph: '🤖', label: 'I had it built for me' },
       { glyph: '📱', label: 'TikTok or Instagram' },
-      { glyph: '🔎', label: 'I went looking for this' },
+      { glyph: '🔎', label: 'I went looking for something like this' },
       { glyph: '🗣️', label: 'Someone told me about it' },
-      { glyph: '🤖', label: 'I built it myself' },
       { glyph: '🌀', label: 'Honestly, no idea' },
     ]),
   },
@@ -446,8 +447,8 @@ const STEPS = [
     cta: 'Continue',
     valid: picked('age'),
     build: single('age', [
-      { label: 'Under 18' }, { label: '18 – 24' }, { label: '25 – 34' },
-      { label: '35 – 44' }, { label: '45 – 54' }, { label: '55+' },
+      { label: '12 or under' }, { label: '13' }, { label: '14' },
+      { label: '15' }, { label: '16' }, { label: '17+' },
     ], { grid: true }),
   },
   {
@@ -457,27 +458,29 @@ const STEPS = [
     cta: 'Continue',
     valid: minPicked('goals'),
     build: multi('goals', [
-      { glyph: '💬', label: 'Make conversation easier' },
-      { glyph: '✨', label: 'Be more magnetic' },
-      { glyph: '❤️', label: 'Dating and flirting' },
-      { glyph: '🎉', label: 'Handle groups and parties' },
-      { glyph: '🧠', label: 'Understand people better' },
-      { glyph: '💼', label: 'Hold my ground at work' },
+      { glyph: '💛', label: 'Talk to someone I like' },
+      { glyph: '💬', label: 'Get better at texting them' },
+      { glyph: '🔍', label: 'Work out if they like me' },
+      { glyph: '🎯', label: 'Actually ask someone out' },
+      { glyph: '🌀', label: 'Stop overthinking everything' },
+      { glyph: '🎉', label: 'Handle parties and groups' },
+      { glyph: '🏫', label: 'Be better at school stuff' },
+      { glyph: '✨', label: 'Be someone people like more' },
     ]),
   },
   {
     eyebrow: 'Step 5',
     title: 'Why now?',
-    sub: 'Something usually prompts this.',
+    sub: 'Something usually sets this off.',
     cta: 'Continue',
     valid: picked('whyNow'),
     build: single('whyNow', [
-      { label: 'I moved somewhere new', sub: 'and I need to build a life here' },
-      { label: 'I am tired of being the quiet one', sub: 'people underestimate me' },
-      { label: 'Something at work', sub: 'a role, a team, a promotion' },
-      { label: 'I want to date properly', sub: 'and I keep getting stuck' },
-      { label: 'My circle has shrunk', sub: 'and I want it back' },
-      { label: 'No reason. Just decided.', sub: 'the best one, honestly' },
+      { label: 'There is someone specific', sub: 'and I keep doing nothing about it' },
+      { label: 'I am fine with my friends and useless otherwise', sub: 'and I am sick of it' },
+      { label: 'I am tired of being the quiet one', sub: 'people think I am boring and I am not' },
+      { label: 'Something embarrassing happened', sub: 'and I have thought about it every day since' },
+      { label: 'New school or new year group', sub: 'and I want to get it right this time' },
+      { label: 'No reason. Just decided.', sub: 'honestly the best one' },
     ]),
   },
   {
@@ -498,14 +501,14 @@ const STEPS = [
     cta: 'Continue',
     valid: minPicked('blockers'),
     build: multi('blockers', [
-      { label: 'I run out of things to say' },
+      { label: 'I go blank around people I like' },
       { label: 'I replay conversations for hours afterwards' },
+      { label: 'I overthink every text before I send it' },
+      { label: 'I cannot tell if they like me or are just being nice' },
       { label: 'I go quiet in groups of more than three' },
-      { label: 'I can talk, but it stays surface level' },
+      { label: 'I never make the first move, ever' },
       { label: 'I get talked over' },
-      { label: 'I avoid events I have already said yes to' },
-      { label: 'People think I am cold when I am not' },
-      { label: 'I cannot tell if someone likes me' },
+      { label: 'I avoid things I have already said yes to' },
     ]),
   },
   {
@@ -514,7 +517,7 @@ const STEPS = [
     cta: 'Continue',
     valid: picked('frequency'),
     build: single('frequency', [
-      { label: 'Almost every conversation' },
+      { label: 'Basically every time' },
       { label: 'Most days' },
       { label: 'A few times a week' },
       { label: 'Now and then' },
@@ -537,39 +540,40 @@ const STEPS = [
   },
   {
     eyebrow: 'Situation 1 of 3',
-    title: 'A party where you know one person',
-    sub: 'They disappear twenty minutes in. What actually happens?',
+    title: 'A party where you know a couple of people',
+    sub: 'They end up in another room. What actually happens?',
     cta: 'Continue',
     valid: picked('sitParty'),
     build: single('sitParty', [
-      { label: 'I would leave early' },
-      { label: 'I would find one person and cling on' },
+      { label: 'I would find a reason not to go' },
+      { label: 'I would stick to the people I know' },
       { label: 'I would manage, quietly' },
       { label: 'I would actually enjoy it' },
     ]),
   },
   {
     eyebrow: 'Situation 2 of 3',
-    title: 'Someone you find attractive starts talking to you',
+    title: 'Someone you like sits down next to you',
+    sub: 'Be honest.',
     cta: 'Continue',
     valid: picked('sitAttraction'),
     build: single('sitAttraction', [
-      { label: 'I freeze completely' },
-      { label: 'I get awkward and over-talk' },
-      { label: 'I am fine until I like them' },
+      { label: 'I completely freeze' },
+      { label: 'I get awkward and talk too much' },
+      { label: 'I am fine until it actually matters' },
       { label: 'I am pretty comfortable' },
     ]),
   },
   {
     eyebrow: 'Situation 3 of 3',
-    title: 'You disagree with something in a meeting',
+    title: 'You know the answer in class',
     cta: 'Continue',
     valid: picked('sitMeeting'),
     build: single('sitMeeting', [
-      { label: 'I never speak' },
-      { label: 'I speak only if asked directly' },
-      { label: 'I contribute sometimes' },
-      { label: 'I say what I think' },
+      { label: 'I never put my hand up' },
+      { label: 'Only if I get asked directly' },
+      { label: 'Sometimes, if I am sure' },
+      { label: 'I just say it' },
     ]),
   },
   {
@@ -586,11 +590,11 @@ const STEPS = [
     cta: 'Continue',
     valid: picked('imagine'),
     build: single('imagine', [
-      { label: 'I would have more friends', sub: 'a fuller calendar' },
-      { label: 'I would stop dreading things', sub: 'no more pre-event anxiety' },
-      { label: 'I would be taken more seriously', sub: 'at work and everywhere' },
-      { label: 'I would find a relationship', sub: 'or be better in the one I have' },
-      { label: 'I would just feel like myself', sub: 'around other people' },
+      { label: 'I would actually talk to them', sub: 'instead of thinking about it' },
+      { label: 'I would stop dreading things', sub: 'no more sick feeling beforehand' },
+      { label: 'I would stop replaying everything', sub: 'and get my evenings back' },
+      { label: 'People would know what I am actually like', sub: 'not the quiet version' },
+      { label: 'I would just feel like myself', sub: 'around everyone, not only my friends' },
     ]),
   },
   {
@@ -663,11 +667,11 @@ const STEPS = [
     cta: 'Continue',
     valid: picked('when'),
     build: single('when', [
-      { glyph: '☕', label: 'With my first coffee' },
-      { glyph: '🚇', label: 'On the commute' },
-      { glyph: '🍽️', label: 'At lunch' },
-      { glyph: '🌆', label: 'Straight after work' },
-      { glyph: '🌙', label: 'Before bed' },
+      { glyph: '🌅', label: 'Before school' },
+      { glyph: '🚌', label: 'On the way in' },
+      { glyph: '🍽️', label: 'At break or lunch' },
+      { glyph: '🏠', label: 'Straight after school' },
+      { glyph: '🌙', label: 'In bed before sleep' },
     ]),
   },
   {

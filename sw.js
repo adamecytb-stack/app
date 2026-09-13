@@ -49,14 +49,14 @@ const PRECACHE = [
   './js/apps/gleam/ai.js',
   './data/gleam/courses.js',
   './data/gleam/scenarios.js',
-  './data/gleam/courses/small-talk.js',
-  './data/gleam/courses/conversation-flow.js',
-  './data/gleam/courses/charisma.js',
-  './data/gleam/courses/storytelling.js',
-  './data/gleam/courses/dating.js',
-  './data/gleam/courses/reading-people.js',
-  './data/gleam/courses/groups.js',
-  './data/gleam/courses/hard-conversations.js',
+  './data/gleam/courses/talking-to-them.js',
+  './data/gleam/courses/texting.js',
+  './data/gleam/courses/signals.js',
+  './data/gleam/courses/making-a-move.js',
+  './data/gleam/courses/nerves.js',
+  './data/gleam/courses/school.js',
+  './data/gleam/courses/parties.js',
+  './data/gleam/courses/likeable.js',
 ];
 
 self.addEventListener('install', (event) => {
