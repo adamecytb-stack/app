@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nocturne">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Prism</title>
+<meta name="description" content="A pocket suite of small, sharp apps. Starting with Gleam — daily reps for social skills.">
+
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0B0A11">
+<meta name="color-scheme" content="dark">
+
+<!-- iOS standalone / add-to-home-screen -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prism">
+<link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+<link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+
+<link rel="preload" href="./assets/fonts/fraunces-1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/schibstedgrotesk-4.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="./css/fonts.css">
+<link rel="stylesheet" href="./css/tokens.css">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/hub.css">
+<link rel="stylesheet" href="./css/gleam.css">
+</head>
+<body>
+
+<div class="atmos" aria-hidden="true">
+  <div class="atmos__aurora atmos__aurora--a"></div>
+  <div class="atmos__aurora atmos__aurora--b"></div>
+  <div class="atmos__aurora atmos__aurora--c"></div>
+  <div class="atmos__grain"></div>
+</div>
+
+<div id="app" class="app-frame"></div>
+
+<div id="layer-toast" class="layer-toast" role="status" aria-live="polite"></div>
+<div id="layer-sheet" class="layer-sheet" aria-hidden="true"></div>
+
+<noscript>
+  <div style="padding:2rem;font-family:sans-serif;color:#F3EFE7">
+    Prism needs JavaScript. Turn it on and reload.
+  </div>
+</noscript>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

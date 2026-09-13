@@ -1,1 +1,127 @@
-# app
+# Prism
+
+A pocket suite of small, sharp apps — free, offline-capable, and installable to an iPhone Home Screen. No accounts, no server, no subscriptions.
+
+The first app is **Gleam**: a Duolingo-style trainer for social skills, replicating the paid app of the same name (bite-sized scenario lessons, streaks, XP, a weekly league, AI practice conversations) with the paywall removed and the content rewritten.
+
+---
+
+## Getting it online
+
+The repo is the site — no build step, no bundler, no `npm install`.
+
+1. **Push to `main`.** The Pages workflow (`.github/workflows/deploy.yml`) runs on every push there.
+2. **Enable Pages:** repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**. Do this once.
+3. Your site appears at `https://<user>.github.io/<repo>/` a minute later.
+
+If you'd rather deploy from this feature branch instead of `main`, change the `branches:` line in the workflow.
+
+## Putting it on your Home Screen
+
+Open the site **in Safari** on iOS, tap **Share → Add to Home Screen**. It then runs full screen with no browser chrome, works with no signal, and keeps your progress on the device.
+
+### You never have to reinstall it
+
+That was the main requirement, so it's handled in three layers:
+
+- The service worker re-checks itself on every launch, on every return to the app, and hourly.
+- `version.json` is polled with `no-store`, which catches the case where an aggressive HTTP cache hides the new `sw.js`.
+- A waiting update is applied immediately: silently when you're idle, behind a one-tap toast when you're mid-lesson so you don't lose an answer.
+
+Every deploy stamps a fresh build id into `sw.js` (that's what the browser notices), and `Profile → Updates` shows the running build with a manual **Check for updates** button.
+
+---
+
+## What's in Gleam
+
+**Onboarding** — 27 steps, close to the real app's: goal quiz, blocker diagnostic, three situational questions, a self-rating slider, an animated "building your profile" pass, a social-baseline score reveal on a dial, a comparison chart, a 90-day projection, and the signature **press-and-hold fingerprint commitment**. No paywall — the real app's funnel ends in a subscription; this one ends in lesson one.
+
+**40 lessons across 8 courses**, ordered by the goals you pick in onboarding:
+
+| Course | What it drills |
+|---|---|
+| Small Talk Foundations | openers, open questions, free information, awkward pauses, exits |
+| Conversation Flow | threading, depth levels, statements over questions, energy matching, reviving |
+| Charisma & Presence | warmth × competence, body language, voice and pace, attention, status |
+| Storytelling & Humour | story shape, specific detail, stock stories, humour mechanics, reading the room |
+| Dating & Flirting | intent, approaching, reading interest, first dates, rejection |
+| Reading People | listening, body signals, validation, names and details, subtext |
+| Groups & Social Energy | joining circles, holding the floor, including people, hosting, social battery |
+| Hard Conversations | saying no, boundaries, disagreement, criticism, repair |
+
+**Eight exercise types** — concept cards, best-reply multiple choice, select-all, true/false, ordering, fill-the-gap, matching pairs, and free-text answers scored against a rubric with a model answer. Anything you get wrong is pushed back onto the end of the lesson, which is the mechanic that makes drilling actually work.
+
+**Practice** — six branching conversations (coffee queue, a party where you know one person, a first date, a friend who isn't okay, the person you wanted to meet, saying no to your manager). Every reply is scored on warmth, curiosity, confidence and clarity, and each one tells you *why* it lands or doesn't.
+
+**Gamification** — XP and a daily goal, streaks with auto-spending streak freezes (earned every three good days, two max), 13 achievements, a 12-week activity heatmap, and a weekly league with promotion and demotion.
+
+---
+
+## The optional AI layer
+
+Everything above works with no key, offline, forever. Add an **Anthropic API key** in `Profile → Practice → AI practice partner` and practice gains a **freeform mode**: type whatever you want, Claude plays the other person in character, and at the end you get a written coaching report with scores and the single highest-value change to make.
+
+There is no backend to hide a key behind, so:
+
+- The key is stored in this browser only (`localStorage`) and sent directly to `api.anthropic.com` from your device.
+- Requests use the `anthropic-dangerous-direct-browser-access` header. That name is accurate — this is fine for *your own* key on *your own* device, and it is never appropriate for a shared one.
+- Anyone with access to the device can read it, so use a key you're happy to rotate. Remove it any time from the same screen.
+
+Model is selectable (Opus 5 / Sonnet 5 / Haiku 4.5); roleplay turns run at low effort so replies come back fast and cost a fraction of a cent.
+
+---
+
+## Honest notes
+
+- **The league is simulated.** There's no server and no other players — rivals are a deterministic roster seeded from the ISO week, with XP curves that advance in real time. The app says so on the League screen. The pressure still works.
+- **The baseline score is not a clinical measure.** It's a weighted read of your own onboarding answers, there to give the number somewhere to move from.
+- **Data lives in one browser.** No account, no sync, no analytics. `Profile → Export a backup` writes a JSON file; **Restore** reads it back. That's how you move to a new phone.
+- **Hearts are off by default.** The real Duolingo mechanic is in there as a toggle, but wrong answers re-queueing is what actually teaches, so nothing blocks you by default.
+
+---
+
+## Working on it locally
+
+```bash
+npx http-server -p 8099 -c-1 .    # any static server works
+open http://127.0.0.1:8099/
+```
+
+Before pushing:
+
+```bash
+node tools/build.mjs --check      # parses every module + verifies the SW precache list
+```
+
+CI runs the same check and fails the deploy if a file is missing from `sw.js`'s precache list or a module doesn't parse.
+
+```bash
+node tools/make-icons.mjs         # regenerate app icons (pure Node, no image libs)
+node tools/build.mjs --build abc  # stamp a build id by hand
+```
+
+### Layout
+
+```
+index.html            shell: background layers, #app, toast + sheet layers
+sw.js                 service worker — versioned cache, network-first navigation
+version.json          build id, regenerated at deploy
+css/                  tokens → base → hub → gleam
+js/core/              router, store, UI kit (hyperscript, icons, sound, confetti), update manager
+js/apps/hub/          the Prism launcher
+js/apps/gleam/        onboarding, learn path, lesson engine, practice, league, profile, AI client
+data/gleam/           course content + practice scenarios (plain JS modules)
+tools/                build stamping and icon generation
+```
+
+### Adding the next app
+
+1. Add an entry to `APPS` in `js/core/registry.js` (id, name, tagline, accent colours, SVG mark).
+2. Create `js/apps/<id>/index.js` exporting `register()` that adds its routes.
+3. Import and call it in `js/main.js`.
+4. Give it a slice of storage with `slice('<id>', defaults)` from `js/core/store.js`.
+5. Add its files to the `PRECACHE` list in `sw.js` (`node tools/build.mjs --check` will tell you if you forget).
+
+The hub retints every shared component to the app's accent on entry, so one component set wears a different colour per app.
+
+Sketched but not built yet, listed on the hub: **Ember** (habit streaks), **Tide** (sleep), **Ledger** (money), **Plate** (calories).

@@ -1,0 +1,106 @@
+/* ──────────────────────────────────────────────────────────────
+   Prism — "Nocturne & Ember"
+   Deep indigo-black ground, one warm ember accent that carries all
+   the energy, bone-white type. Committed dark: no light variant, so
+   every surface can be tuned rather than compromised.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Ground ─────────────────────────────────────────────── */
+  --ink-950: #070610;
+  --ink-900: #0B0A11;
+  --ink-850: #100E18;
+  --ink-800: #16131F;
+  --ink-700: #1C1828;
+  --ink-600: #262034;
+  --ink-500: #332B45;
+
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-2: rgba(255, 255, 255, 0.12);
+  --hairline-3: rgba(255, 255, 255, 0.2);
+  --lift: rgba(255, 255, 255, 0.035);
+
+  /* ── Type ───────────────────────────────────────────────── */
+  --text: #F4F0E8;
+  --text-2: #BAB2C6;
+  --text-3: #837B95;
+  --text-4: #5B5470;
+
+  /* ── Ember (the gleam) ──────────────────────────────────── */
+  --ember-050: #FFF3DC;
+  --ember-100: #FFE2AF;
+  --ember-300: #FFC763;
+  --ember: #F5A524;
+  --ember-600: #DC8709;
+  --ember-700: #A66206;
+  --ember-ink: #2A1A03;
+  --ember-glow: rgba(245, 165, 36, 0.34);
+  --ember-veil: rgba(245, 165, 36, 0.11);
+
+  /* ── Semantics ──────────────────────────────────────────── */
+  --mint: #4FD8A8;
+  --mint-deep: #123A2D;
+  --mint-ink: #06251A;
+  --rose: #FF6B7A;
+  --rose-deep: #3F1620;
+  --rose-ink: #2A070E;
+  --iris: #9A86FF;
+  --iris-deep: #221B45;
+  --sky: #63C6F5;
+  --flame-a: #FF7A18;
+  --flame-b: #FFC53D;
+
+  /* ── Radii ──────────────────────────────────────────────── */
+  --r-xs: 9px;
+  --r-sm: 13px;
+  --r-md: 18px;
+  --r-lg: 24px;
+  --r-xl: 32px;
+  --r-2xl: 40px;
+  --r-pill: 999px;
+
+  /* ── Elevation ──────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.38), 0 10px 26px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 4px 10px rgba(0, 0, 0, 0.42), 0 26px 60px rgba(0, 0, 0, 0.5);
+  --shadow-ember: 0 8px 30px rgba(245, 165, 36, 0.22);
+
+  /* ── Motion ─────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.18, 0.94, 0.24, 1.14);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --t-fast: 140ms;
+  --t: 240ms;
+  --t-slow: 460ms;
+
+  /* ── Metrics ────────────────────────────────────────────── */
+  --frame: 500px;
+  --gutter: 20px;
+  --tabbar-h: 66px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* ── Fonts ──────────────────────────────────────────────── */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'Schibsted Grotesk', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+}
+
+/* Per-app accent. The hub retints this as you enter each app, so one set of
+   components can wear a different colour per product without a second theme. */
+:root {
+  --accent: var(--ember);
+  --accent-300: var(--ember-300);
+  --accent-600: var(--ember-600);
+  --accent-ink: var(--ember-ink);
+  --accent-glow: var(--ember-glow);
+  --accent-veil: var(--ember-veil);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 1ms;
+    --t: 1ms;
+    --t-slow: 1ms;
+  }
+}
