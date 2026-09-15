@@ -36,7 +36,7 @@ function emptyWorld() {
     coins: new Map(),
     gems: new Map(),
     shields: new Map(),
-    spikes: new Set(),
+    spikes: new Map(),      // key -> { c, r, dir } so each one knows its wall
     wardens: [],
     exit: null,
     start: { c: 7, r: 1 },
@@ -48,7 +48,9 @@ function addParsed(world, parsed, rowOffset) {
   for (const p of parsed.coins) world.coins.set(key(p.c, p.r + rowOffset), { c: p.c, r: p.r + rowOffset });
   for (const p of parsed.gems) world.gems.set(key(p.c, p.r + rowOffset), { c: p.c, r: p.r + rowOffset });
   for (const p of parsed.shields) world.shields.set(key(p.c, p.r + rowOffset), { c: p.c, r: p.r + rowOffset });
-  for (const p of parsed.spikes) world.spikes.add(key(p.c, p.r + rowOffset));
+  for (const p of parsed.spikes) {
+    world.spikes.set(key(p.c, p.r + rowOffset), { c: p.c, r: p.r + rowOffset, dir: p.dir });
+  }
   for (const w of parsed.wardens) world.wardens.push(makeWarden(world, w.c, w.r + rowOffset, w.axis));
 }
 
@@ -525,22 +527,37 @@ export function createGame({ mode, level, canvas, onEvent }) {
     ctx.stroke();
   }
 
-  function drawSpike(c, r) {
-    const x = screenX(c);
-    const y = screenY(r);
-    ctx.fillStyle = '#B9AFA0';
+  /* Drawn in a rotated local frame so the teeth always grow out of the wall
+   * they are bolted to, instead of floating in the middle of a corridor. */
+  const SPIKE_TURN = { up: 0, down: Math.PI, right: Math.PI / 2, left: -Math.PI / 2 };
+
+  function drawSpike(c, r, dir) {
+    const cx = screenX(c) + cell / 2;
+    const cy = screenY(r) + cell / 2;
+    const h = cell / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(SPIKE_TURN[dir] ?? 0);
+
+    // Mounting plate, flush against the wall face.
+    ctx.fillStyle = '#6B6255';
+    ctx.fillRect(-h, h - cell * 0.16, cell, cell * 0.16);
+
     const n = 3;
     const w = cell / n;
     for (let i = 0; i < n; i += 1) {
+      const left = -h + i * w;
+      ctx.fillStyle = i === 1 ? '#D6CCBA' : '#B9AFA0';
       ctx.beginPath();
-      ctx.moveTo(x + i * w + w * 0.1, y + cell * 0.85);
-      ctx.lineTo(x + i * w + w * 0.5, y + cell * 0.2);
-      ctx.lineTo(x + i * w + w * 0.9, y + cell * 0.85);
+      ctx.moveTo(left + w * 0.08, h - cell * 0.14);
+      ctx.lineTo(left + w * 0.5, -h + cell * 0.12);
+      ctx.lineTo(left + w * 0.92, h - cell * 0.14);
       ctx.closePath();
       ctx.fill();
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(x, y + cell * 0.85, cell, cell * 0.15);
+
+    ctx.restore();
   }
 
   function drawWarden(w, t) {
@@ -717,9 +734,8 @@ export function createGame({ mode, level, canvas, onEvent }) {
       for (let c = 0; c < COLS; c += 1) if (solid(c, r) && r >= 0) drawStone(c, r);
     }
 
-    for (const k of world.spikes) {
-      const [c, r] = k.split(',').map(Number);
-      if (r >= first && r <= lastRow) drawSpike(c, r);
+    for (const sp of world.spikes.values()) {
+      if (sp.r >= first && sp.r <= lastRow) drawSpike(sp.c, sp.r, sp.dir);
     }
 
     drawExit(t);

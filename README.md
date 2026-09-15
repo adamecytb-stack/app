@@ -24,7 +24,13 @@ node tools/check-levels.mjs     # proves every level is completable and every ch
 node tools/gen-levels.mjs       # proposes new level candidates, discarding anything unsolvable
 ```
 
-`check-levels` runs a breadth-first search over slide moves with a collectible bitmask, which gives the *exact* optimal number of slides for a full clear — that's where each level's `par` comes from, so the third star is genuinely earned. It also proves every arcade chunk can be escaped from any point on the corridor beneath it, so a random climb can never wall you in.
+Maps are **mazes**, not open rooms with a few pillars. That matters more than it sounds: with nothing to stop you, one flick carries you clean across the map and there is no decision in it. Dense one-cell corridors keep every slide to two or three cells. The generator enforces this rather than leaving it to taste — a candidate is discarded if its longest slide exceeds `MAX_SLIDE` or its average exceeds `AVG_SLIDE`. Shipped content runs at max 6–7, average ~3.
+
+`check-levels` runs a breadth-first search over slide moves with a collectible bitmask, which gives the *exact* optimal number of slides for a full clear — that's where each level's `par` comes from, so the third star is genuinely earned.
+
+For arcade chunks it proves something stronger than "a way out exists": **every cell you can reach inside a chunk must itself still be able to reach the top.** Otherwise a perfectly normal move can strand you, and the run ends because of the generator rather than because of you. Slide reachability is not symmetric, so this is also checked in the direction the game is actually played — bottom to top.
+
+Spikes are bolted to a wall and point away from it, with the facing derived from the finished grid at parse time so it can never disagree with the map. The generator only places them on cells that have a wall to attach to, and the checker fails any spike left floating.
 
 It also emits the optimal move sequence (`--solution l1`), which the browser test replays key by key and asserts a three-star clear. If the engine's physics ever drift from the solver's model, that test fails.
 

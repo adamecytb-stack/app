@@ -13,7 +13,11 @@
  * that ends in a wall through no fault of the player.
  */
 import { LEVELS, parseGrid } from '../js/apps/scarab/levels.js';
-import { CHUNKS, CHUNK_W, CHUNK_H } from '../js/apps/scarab/chunks.js';
+import {
+  CHUNKS, CHUNK_W, CHUNK_H, PORT_ROW,
+} from '../js/apps/scarab/chunks.js';
+
+const PORTS = [...PORT_ROW].map((ch, i) => (ch === '.' ? i : -1)).filter((i) => i >= 0);
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const key = (c, r) => `${c},${r}`;
@@ -61,6 +65,9 @@ function analyseLevel(level) {
   let bestMask = 0;
   let winFrom = null;
   let winDir = null;
+  let maxSlide = 0;
+  let slideSum = 0;
+  let slideCount = 0;
 
   while (queue.length) {
     const cur = queue.shift();
@@ -70,6 +77,9 @@ function analyseLevel(level) {
     for (const [dc, dr] of DIRS) {
       const move = slide(grid, spikes, cur.c, cur.r, dc, dr);
       if (!move) continue;
+      maxSlide = Math.max(maxSlide, move.path.length);
+      slideSum += move.path.length;
+      slideCount += 1;
 
       let mask = cur.mask;
       let crossesExit = false;
@@ -126,6 +136,9 @@ function analyseLevel(level) {
     par: par === Infinity ? null : par,
     states: dist.size,
     solution,
+    maxSlide,
+    avgSlide: slideCount ? slideSum / slideCount : 0,
+    floating: world.spikes.filter((p) => !p.dir).length,
   };
 }
 
@@ -147,46 +160,79 @@ if (wantSolution !== -1) {
   process.exit(0);
 }
 
-/** A chunk must be escapable from every cell of the corridor beneath it. */
+/* Chunks stack in random order, so a chunk must be escapable from EVERY port
+ * the player might arrive through. One trap here is a run ended by the
+ * generator rather than by the player, which is the worst bug this game
+ * could ship. */
 function analyseChunk(chunk, i) {
   const problems = [];
   if (chunk.rows.length !== CHUNK_H) problems.push(`is ${chunk.rows.length} rows, expected ${CHUNK_H}`);
   for (const [n, line] of chunk.rows.entries()) {
     if (line.length !== CHUNK_W) problems.push(`row ${n} is ${line.length} wide, expected ${CHUNK_W}`);
   }
-  if (chunk.rows[0] !== '#.............#') problems.push('top row must be a clear corridor');
+  if (chunk.rows[0] !== PORT_ROW) problems.push(`top row must be the port row ${PORT_ROW}`);
+  if (chunk.rows.at(-1) !== PORT_ROW) problems.push(`bottom row must be the port row ${PORT_ROW}`);
   if (problems.length) return { problems };
 
-  // World: the corridor the player arrives on, then the chunk above it.
-  const world = ['#.............#', ...chunk.rows];
-  const { grid, spikes } = parseGrid(world);   // parseGrid flips to floor-up
+  const { grid, spikes } = parseGrid(chunk.rows);   // flips to floor-up
   const spikeSet = new Set(spikes.map((p) => key(p.c, p.r)));
-  const goalRow = grid.length - 1;             // the chunk's top corridor
+  const goalRow = grid.length - 1;                  // the chunk's top ports
 
-  const reachable = new Set();
-  const queue = [];
-  for (let c = 1; c < CHUNK_W - 1; c += 1) {
-    if (grid[0][c] === '#') continue;
-    queue.push({ c, r: 0 });
-    reachable.add(key(c, 0));
-  }
-  const entries = queue.length;
+  let worstSlide = 0;
+  let totalReach = 0;
 
-  let escaped = false;
-  while (queue.length) {
-    const cur = queue.shift();
-    if (cur.r === goalRow) { escaped = true; break; }
-    for (const [dc, dr] of DIRS) {
-      const move = slide(grid, spikeSet, cur.c, cur.r, dc, dr);
-      if (!move) continue;
-      for (const [pc, pr] of move.path) if (pr === goalRow) escaped = true;
-      const id = key(move.c, move.r);
-      if (!reachable.has(id)) { reachable.add(id); queue.push({ c: move.c, r: move.r }); }
+  /** Can a slide from here ever touch the top? */
+  const canEscape = (start) => {
+    const seen = new Set([key(start.c, start.r)]);
+    const queue = [start];
+    while (queue.length) {
+      const cur = queue.shift();
+      if (cur.r === goalRow) return true;
+      for (const [dc, dr] of DIRS) {
+        const move = slide(grid, spikeSet, cur.c, cur.r, dc, dr);
+        if (!move) continue;
+        worstSlide = Math.max(worstSlide, move.path.length);
+        for (const [, pr] of move.path) if (pr === goalRow) return true;
+        const id = key(move.c, move.r);
+        if (!seen.has(id)) { seen.add(id); queue.push({ c: move.c, r: move.r }); }
+      }
+    }
+    return false;
+  };
+
+  for (const port of PORTS) {
+    // Collect everywhere you could end up after entering through this port.
+    const reachable = new Set([key(port, 0)]);
+    const queue = [{ c: port, r: 0 }];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const [dc, dr] of DIRS) {
+        const move = slide(grid, spikeSet, cur.c, cur.r, dc, dr);
+        if (!move) continue;
+        const id = key(move.c, move.r);
+        if (!reachable.has(id)) { reachable.add(id); queue.push({ c: move.c, r: move.r }); }
+      }
+    }
+    totalReach = Math.max(totalReach, reachable.size);
+
+    // Every one of those must still have a way out, or a normal move can
+    // strand the player through no fault of their own.
+    const stuck = [...reachable].filter((k) => {
+      const [c, r] = k.split(',').map(Number);
+      return !canEscape({ c, r });
+    });
+    if (stuck.length) {
+      problems.push(`entering at column ${port}: ${stuck.length} cell(s) with no way out (${stuck.slice(0, 4).join(' ')})`);
     }
   }
 
-  if (!escaped) problems.push('cannot reach the corridor above — this chunk can trap a run');
-  return { problems, entries, reachable: reachable.size, index: i };
+  // Any spike the renderer cannot bolt to a wall would float in mid-air.
+  const floating = spikes.filter((p) => !p.dir);
+  if (floating.length) problems.push(`${floating.length} spike(s) with no wall to attach to`);
+
+  return {
+    problems, ports: PORTS.length, reachable: totalReach, maxSlide: worstSlide, index: i,
+  };
 }
 
 /* ── Report ────────────────────────────────────────────────── */
@@ -205,10 +251,12 @@ for (const level of LEVELS) {
   }
   const parOk = level.par === r.par;
   if (!parOk) parUpdates.push({ id: level.id, from: level.par, to: r.par });
+  if (r.floating) { broken += 1; console.log(`  ✗ ${level.id} has ${r.floating} floating spike(s)`); continue; }
   console.log(
     `  ${parOk ? '✓' : '·'} ${level.id.padEnd(4)} ${level.name.padEnd(14)}`
     + ` ${String(r.pickups).padStart(2)} pickups   exit in ${String(r.minToExit).padStart(2)}`
-    + `   par ${String(r.par).padStart(2)}${parOk ? '' : `  (file says ${level.par})`}`,
+    + `   par ${String(r.par).padStart(2)}${parOk ? '' : `  (file says ${level.par})`}`
+    + `   slide max ${r.maxSlide} avg ${r.avgSlide.toFixed(1)}`,
   );
 }
 
@@ -220,7 +268,7 @@ for (const [i, chunk] of CHUNKS.entries()) {
     console.log(`  ✗ chunk ${i} (tier ${chunk.tier})`);
     for (const p of r.problems) console.log(`      ${p}`);
   } else {
-    console.log(`  ✓ chunk ${String(i).padStart(2)} (tier ${chunk.tier})   ${String(r.entries).padStart(2)} entry cells   ${r.reachable} reachable`);
+    console.log(`  ✓ chunk ${String(i).padStart(2)} (tier ${chunk.tier})   ${r.ports} ports all escape   ${r.reachable} reachable   slide max ${r.maxSlide}`);
   }
 }
 
