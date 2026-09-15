@@ -5,6 +5,7 @@ import { initUpdates } from './core/update.js';
 import { applyAccent, findApp } from './core/registry.js';
 import { registerHub } from './apps/hub/hub.js';
 import { registerGleam } from './apps/gleam/index.js';
+import { registerScarab } from './apps/scarab/index.js';
 
 /** Suite-wide preferences, shared by every app. */
 export const prefs = slice('_prefs', {
@@ -23,6 +24,7 @@ setFeedbackPrefs(prefs);
 
 registerHub();
 registerGleam();
+registerScarab();
 
 const mount = document.getElementById('app');
 

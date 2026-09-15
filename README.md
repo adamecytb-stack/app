@@ -2,6 +2,34 @@
 
 A pocket suite of small, sharp apps — free, offline-capable, and installable to an iPhone Home Screen. No accounts, no server, no subscriptions.
 
+Two apps so far: **Gleam** (social skills) and **Scarab** (a tomb maze arcade game).
+
+---
+
+## Scarab
+
+A maze arcade game. Flick up, down, left or right and the beetle slides until a wall stops it — you don't get to stop halfway or change your mind mid-slide.
+
+- **Endless climb** — the main mode. Go as high as you can while lava rises from below, speeding up the higher you get and closing the gap faster if you stall. Score is height plus gold, with a chain multiplier for coins taken in a single slide.
+- **12 levels** — fixed tombs with three stars each: clear it, take all the gold, and do it within par.
+- **Hazards** — spikes, wardens that patrol, and the lava. One hit kills; shields absorb one.
+- **Sound** — a generative chiptune soundtrack in Phrygian dominant (the scale that makes anything sound ancient) that adds layers and tempo as the lava closes in, plus ~15 effects. All synthesized from oscillators at runtime: no audio files, so it still works offline.
+
+Everything is drawn procedurally on a canvas — no sprite sheets. The art, the beetle, the levels, the music and the name are all original to this repo; what it shares with the games that inspired it is the slide-until-you-hit-something mechanic, which is a rule, not artwork.
+
+**Content is machine-verified.** Slide movement makes level design deceptively hard — you can only stop where a wall stops you, so hand-drawn mazes routinely end up with uncollectable coins or an unreachable exit. So:
+
+```bash
+node tools/check-levels.mjs     # proves every level is completable and every chunk escapable
+node tools/gen-levels.mjs       # proposes new level candidates, discarding anything unsolvable
+```
+
+`check-levels` runs a breadth-first search over slide moves with a collectible bitmask, which gives the *exact* optimal number of slides for a full clear — that's where each level's `par` comes from, so the third star is genuinely earned. It also proves every arcade chunk can be escaped from any point on the corridor beneath it, so a random climb can never wall you in.
+
+It also emits the optimal move sequence (`--solution l1`), which the browser test replays key by key and asserts a three-star clear. If the engine's physics ever drift from the solver's model, that test fails.
+
+---
+
 The first app is **Gleam**: a Duolingo-style trainer for social skills, replicating the paid app of the same name (bite-sized scenario lessons, streaks, XP, a weekly league, AI practice conversations) with the paywall removed.
 
 **The content is written for one specific person**: a 13–14 year old who is completely fine with their friends and falls apart around people they like romantically. Every example is set at school, in a group chat, or at someone's house — there is no careers advice, no networking, no bars, no dating apps. If that is not you, the lessons in `data/gleam/courses/` are plain JS and rewriting them is the whole job.
@@ -115,8 +143,9 @@ css/                  tokens → base → hub → gleam
 js/core/              router, store, UI kit (hyperscript, icons, sound, confetti), update manager
 js/apps/hub/          the Prism launcher
 js/apps/gleam/        onboarding, learn path, lesson engine, practice, league, profile, AI client
+js/apps/scarab/       game engine, synth audio, levels, arcade chunks, screens
 data/gleam/           course content + practice scenarios (plain JS modules)
-tools/                build stamping and icon generation
+tools/                build stamping, icon generation, level solver and generator
 ```
 
 ### Adding the next app

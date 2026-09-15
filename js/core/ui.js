@@ -108,6 +108,10 @@ function ctx() {
   return audioCtx;
 }
 
+/** Shared AudioContext — apps with their own synths reuse this one.
+ *  Browsers cap how many you may create, so never open a second. */
+export function audioContext() { return ctx(); }
+
 function tone(freq, start, duration, { gain = 0.07, type = 'sine' } = {}) {
   const ac = ctx();
   if (!ac) return;
