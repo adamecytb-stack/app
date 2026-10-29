@@ -1,0 +1,148 @@
+# QUANT LAB configuration: the single source for every number the pipeline uses.
+#
+# Rule 4: costs may only get STRICTER. Never lower a fee or slippage number.
+# Rule 2: the holdout split is sealed. The splits are fingerprinted by
+#         splits_sha256 below, so editing any split date makes load_config() fail.
+#
+# All dates are UTC. Date ranges are half-open: start is included, end is not.
+# A bar's timestamp is its OPEN time.
+
+data:
+  research_source: binance_bulk   # data.binance.vision, spot klines
+  funding_source: binance_bulk    # USDT-M funding history, used for H2
+  base_timeframe: 1h              # 4h and 1d are resampled from 1h in code
+  raw_dir: data/raw
+  # Everything before the Development start is downloaded too, but it is only used
+  # to warm up indicators (e.g. a 200-day MA). No trades are evaluated there.
+  download_from: "2017-08-01"
+  # Before paper trading, MEXC and Binance 1h closes must agree within this many bps.
+  max_mexc_binance_close_diff_bps: 5
+
+timeframes: ["1h", "4h", "1d"]
+
+assets:
+  core: ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+  # Filled in Phase 2: the 7 most liquid MEXC USDT pairs that have
+  # Binance spot history starting on or before extra_listed_before.
+  extra: []
+  extra_count: 7
+  extra_listed_before: "2021-01-01"
+
+# Point-in-time universe for multi-asset strategies (H3). A coin is eligible on a
+# date only if it already met these on that date. Delisted coins are kept.
+universe:
+  min_history_days: 90
+  min_avg_daily_volume_usd: 5000000   # 30-day average, measured on past data only
+  volume_lookback_days: 30
+
+splits:
+  development: {start: "2019-01-01", end: "2024-07-01"}
+  validation:  {start: "2024-07-01", end: "2025-10-01"}
+  holdout:     {start: "2025-10-01", end: null}   # null = latest data. SEALED.
+
+# SHA-256 of the splits section. Computed by src/config.py:splits_hash().
+# If this stops matching, someone moved a split boundary. Stop and ask.
+splits_sha256: "b17367b06f5a13b915e9066673d0e0be320e011d7b7b909897a612df974c0031"
+
+# Market regimes for per-regime reporting (spec 6.2) and Gate B.
+# The split each regime falls in is noted, because only Development
+# regimes can be used before the validation and holdout gates.
+regimes:
+  bull_2021:     {start: "2021-01-01", end: "2022-01-01"}   # development
+  bear_2022:     {start: "2022-01-01", end: "2023-01-01"}   # development
+  recovery_2023: {start: "2023-01-01", end: "2024-01-01"}   # development
+  y2024_25:      {start: "2024-01-01", end: "2026-01-01"}   # dev + validation + holdout
+  y2026:         {start: "2026-01-01", end: null}           # holdout only (sealed)
+
+costs:
+  # Research cost per side = max(fees_stress_default, fees_real), then
+  # multiplied by fee_multipliers. Fills are modeled as taker (market) orders.
+  fees_stress_default:
+    spot_taker: 0.0010   # 0.10% per side
+    perp_taker: 0.0005   # 0.05% per side
+  fees_real:
+    # NOT VERIFIED YET. Fill these from the owner's MEXC account fee screen or
+    # MEXC's official fee page before the first backtest (Phase 3/4).
+    # Web reports from Oct 2026 conflict:
+    #   spot:  0% maker / 0.05% taker (some regions up to 0.10%)
+    #   perps: 0% / 0.02% on web/app; API orders reportedly 0.01% / 0.05%
+    #          from 2026-03-31, then 0.06% / 0.08% from 2026-06-01
+    verified: false
+    source: null
+    spot_maker: null
+    spot_taker: null
+    perp_maker: null
+    perp_taker: null
+  fee_multipliers: [1, 2, 3]
+
+  # Slippage per fill, in basis points (1 bp = 0.01%).
+  slippage_bps:
+    tier1: 2    # BTC, ETH
+    tier2: 5    # other majors
+    tier3: 10   # smaller alts
+  asset_slippage_tier:
+    BTC/USDT: tier1
+    ETH/USDT: tier1
+    SOL/USDT: tier2
+    # Extra assets get a tier in Phase 2. Unknown assets default to tier3.
+  slippage_multipliers: [1, 2]
+
+  # Funding interval is read per symbol from the data. Never assume 8h.
+  funding_interval: from_data
+
+risk:
+  paper_account_usd: 10000
+  risk_per_trade: 0.005          # 0.5% of equity
+  default_sizing: fixed_fractional
+  max_spot_exposure: 1.0         # spot: no leverage
+  vol_target_annual: null        # H1 parameter, pre-registered in HYPOTHESES.md (Phase 5)
+  kelly_max_fraction: 0.25       # F2: finalists only, from the CI lower bound
+
+validation:
+  # Walk-forward runs on Development data only, so Validation stays untouched for Gate C.
+  walkforward:
+    data_split: development
+    train_years: 2
+    test_months: 3
+    step_months: 3
+  random_baseline_runs: 1000
+  bootstrap_runs: 2000
+  bootstrap_block: "7D"          # stationary block bootstrap, ~1 week of bars
+  truncation_test_cuts: 20
+  # Rule 9: any OOS result above these is treated as a bug until proven otherwise.
+  too_good:
+    sharpe: 3.0
+    profit_factor: 3.0
+
+gates:
+  A:
+    fee_multiplier: 2
+    min_oos_trades: 200
+    min_oos_trades_1d: 100
+    max_p_value: 0.05
+  B:
+    fee_multiplier: 3
+    param_perturbation: 0.20
+    remove_top_trades: 5
+    start_shift_months: [1, 2, 3]
+    min_regimes_profitable: 3
+  C:
+    ci_level: 0.95
+    min_dsr: 0.95
+    max_dd_multiple_of_walkforward: 1.5
+  E:
+    holdout_runs_allowed: 1
+
+paper:
+  exchange: mexc
+  directional_market: spot
+  carry_market: usdt_perp        # H2 only
+  allow_shorts: false            # except the perp leg of H2
+  min_run_weeks: 8
+  scheduler: windows_task_scheduler
+  telegram_alerts: false
+  state_db: paper/paper_state.sqlite
+  sprt:
+    alpha: 0.05
+    beta: 0.05
+  hard_kill_dd_multiple: 1.5     # x the backtest's 95th-percentile max drawdown

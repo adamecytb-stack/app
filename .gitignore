@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Downloaded market data (re-downloadable, never edited by hand)
+data/raw/*
+!data/raw/.gitkeep
+
+# Paper trading state lives on the owner's PC
+*.sqlite
+*.sqlite-journal
