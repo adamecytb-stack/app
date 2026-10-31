@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Funding-rate backtest dashboard</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+    --ref: #898781; --good: #006300; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface-1: #1a1a19;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --ref: #898781; --good: #0ca30c; --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --ref: #898781; --good: #0ca30c; --critical: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .viz-root {
+    background: var(--page); color: var(--text-primary); min-height: 100vh;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; }
+  h2 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+  .sub { color: var(--text-secondary); margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+          padding: 18px 18px 14px; margin: 14px 0; }
+  .card > .muted { margin: 0 0 10px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 16px 0 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { background: var(--surface-1); color: var(--text-secondary); border: 0; padding: 6px 12px;
+                font: inherit; cursor: pointer; border-right: 1px solid var(--border); }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: var(--wash); }
+  .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 650; background: var(--wash); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 12px; }
+  .toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary); }
+  .key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 8px; color: var(--text-secondary); font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .legend .rect { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .chart { position: relative; width: 100%; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+         border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+         min-width: 150px; display: none; z-index: 5; white-space: nowrap; }
+  .tip .t { color: var(--text-secondary); margin-bottom: 4px; }
+  .tip .row { display: flex; align-items: center; gap: 8px; }
+  .tip .row b { font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+  .tip .row span:last-child { color: var(--text-secondary); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .grid2 .card { margin: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+  th { color: var(--text-secondary); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text-primary); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td .key { margin-right: 6px; vertical-align: middle; }
+  .neg { color: var(--critical); }
+  .pos { color: var(--good); }
+  .scroll { overflow: auto; max-height: 520px; }
+  .tablebar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 10px; }
+  select, input[type="search"] { font: inherit; color: var(--text-primary); background: var(--surface-1);
+       border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  .pager { display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--text-secondary); }
+  .pager button { font: inherit; background: var(--surface-1); color: var(--text-primary);
+                  border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .notes li { margin-bottom: 6px; color: var(--text-secondary); }
+  .themebtn { float: right; font: inherit; background: var(--surface-1); color: var(--text-secondary);
+              border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  details summary { cursor: pointer; color: var(--text-secondary); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<div class="wrap">
+  <button class="themebtn" id="themeBtn" type="button">Toggle theme</button>
+  <h1>Delta-neutral funding-rate backtest</h1>
+  <p class="sub" id="subtitle"></p>
+  <p class="muted" id="generated"></p>
+
+  <div class="filters" role="group" aria-label="Filters">
+    <div class="seg" id="rangeSeg" role="group" aria-label="Date range"></div>
+    <div class="toggles" id="toggles" role="group" aria-label="Strategies"></div>
+  </div>
+
+  <div class="card">
+    <h2>Equity vs savings</h2>
+    <p class="muted">Log scale, rebased to the start capital at the start of the selected range. Hover or use arrow keys for values.</p>
+    <div class="legend" id="eqLegend"></div>
+    <div class="chart" id="eqChart" tabindex="0" aria-label="Equity chart"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Drawdown</h2>
+      <p class="muted">Distance from the running peak inside the selected range.</p>
+      <div class="chart" id="ddChart" tabindex="0" aria-label="Drawdown chart"></div>
+    </div>
+    <div class="card">
+      <h2>Selected range</h2>
+      <p class="muted">Computed in your browser from daily equity.</p>
+      <div id="rangeTable"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Full-period summary</h2>
+    <p class="muted" id="summaryNote"></p>
+    <div class="scroll" id="summaryTable"></div>
+    <details><summary>Strategy parameters</summary><div class="scroll" id="paramsTable"></div></details>
+  </div>
+
+  <div class="card">
+    <h2>Return per period</h2>
+    <p class="muted">Calendar years and the three regimes. Values are in the table below the chart.</p>
+    <div class="legend" id="perLegend"></div>
+    <div class="chart" id="perChart" aria-label="Return per period chart"></div>
+    <div class="scroll" id="perTable" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>10 worst events</h2>
+    <p class="muted">Liquidations count what the event itself cost (hedged value just before vs cash recovered); other rows are whole-position losses.</p>
+    <div class="scroll" id="worstTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>Event database</h2>
+    <p class="muted">Every closed position and risk event. Scoped by the strategy toggles above. Click a column to sort.</p>
+    <div class="tablebar">
+      <select id="causeSel" aria-label="Cause"></select>
+      <input type="search" id="coinSearch" placeholder="Coin, e.g. ETH" aria-label="Coin search">
+      <span class="muted" id="evCount"></span>
+    </div>
+    <div class="scroll" id="eventsTable"></div>
+    <div class="pager"><button id="prevPg" type="button">Prev</button><span id="pgInfo"></span><button id="nextPg" type="button">Next</button></div>
+  </div>
+
+  <div class="card" id="gridCard">
+    <h2>Grid search: in-sample vs out-of-sample</h2>
+    <p class="muted">Each dot is one parameter set. Sharpe on 2021–2023 (chosen on) vs 2024+ (unseen). Dots below the diagonal did worse out of sample.</p>
+    <div class="legend" id="gridLegend"></div>
+    <div class="chart" id="gridChart" aria-label="Grid search scatter"></div>
+    <div class="tablebar" style="margin-top:12px">
+      <select id="famSel" aria-label="Family"></select>
+      <span class="muted" id="gridCount"></span>
+    </div>
+    <div class="scroll" id="gridTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>Notes</h2>
+    <ul class="notes" id="notes"></ul>
+  </div>
+</div>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function () {
+  "use strict";
+  const D = window.BACKTEST;
+  const NS = "http://www.w3.org/2000/svg";
+  const root = document.querySelector(".viz-root");
+  if (!D) { document.getElementById("subtitle").textContent = "No data.js found. Run: python funding_backtest/run.py"; return; }
+
+  // ------------------------------------------------------------------ helpers
+  const css = (v) => getComputedStyle(root).getPropertyValue(v).trim();
+  const ALL = D.strategies.concat([D.savings_name]);
+  const colorOf = (name) => name === D.savings_name ? css("--ref") : css("--s" + (D.strategies.indexOf(name) % 8 + 1));
+  const FAMILY_SLOT = { Passive: 1, Threshold: 2, Rotation: 3 };   // same hues as the matching strategies
+  const pct = (v, d = 1) => v == null ? "–" : (Math.abs(v) < 5e-7 ? 0 : v * 100).toFixed(d).replace(/^-(0\.?0*)$/, "$1") + "%";
+  const spct = (v, d = 1) => v == null ? "–" : (v > 0 ? "+" : "") + (v * 100).toFixed(d) + "%";
+  const usd = (v) => v == null ? "–" : (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
+  const num = (v, d = 2) => v == null ? "–" : Number(v).toFixed(d);
+  const compactUsd = (v) => v >= 1e6 ? "$" + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "M" : v >= 1e4 ? "$" + Math.round(v / 1e3) + "K" : "$" + Math.round(v).toLocaleString("en-US");
+  function el(tag, attrs, parent) {
+    const e = tag.startsWith("svg:") ? document.createElementNS(NS, tag.slice(4)) : document.createElement(tag);
+    for (const k in (attrs || {})) {
+      if (k === "text") e.textContent = attrs[k]; else e.setAttribute(k, attrs[k]);
+    }
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function niceStep(span, n) {
+    const raw = span / Math.max(n, 1), p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const m = raw / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+
+  // ------------------------------------------------------------------ state
+  const RANGES = [
+    ["all", "All", D.start, D.end], ["2021", "2021 bull", "2021-01-01", "2021-12-31"],
+    ["2022", "2022 bear", "2022-01-01", "2022-12-31"], ["2023", "2023–26", "2023-01-01", D.end],
+    ["oos", "2024+ (out of sample)", "2024-01-01", D.end],
+  ];
+  const state = { range: "all", hidden: new Set(), page: 0, sort: { key: "time", dir: -1 }, gridSort: { key: "sharpe_is", dir: -1 } };
+
+  document.getElementById("subtitle").textContent =
+    `${D.start} to ${D.end} · start capital ${usd(D.initial_capital)} · hourly simulation on Binance data · ${D.universe_coins} coins in the point-in-time universe`;
+  document.getElementById("generated").textContent = "Generated " + D.generated;
+
+  // ------------------------------------------------------------------ filter row
+  const seg = document.getElementById("rangeSeg");
+  RANGES.forEach(([key, label]) => {
+    const b = el("button", { type: "button", text: label, "aria-pressed": key === state.range }, seg);
+    b.addEventListener("click", () => { state.range = key; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); renderRange(); });
+  });
+  const tog = document.getElementById("toggles");
+  ALL.forEach((name) => {
+    const lab = el("label", {}, tog);
+    const cb = el("input", { type: "checkbox" }, lab); cb.checked = true;
+    const k = el("span", { class: "key" }, lab); k.dataset.series = name;
+    el("span", { text: name }, lab);
+    cb.addEventListener("change", () => { cb.checked ? state.hidden.delete(name) : state.hidden.add(name); state.page = 0; renderAll(); });
+  });
+  const visible = () => ALL.filter((n) => !state.hidden.has(n));
+
+  function paintKeys() {
+    document.querySelectorAll("[data-series]").forEach((k) => { k.style.background = colorOf(k.dataset.series); });
+  }
+  function legend(host, names, shape) {
+    host.textContent = "";
+    names.forEach((n) => { const s = el("span", {}, host); el("span", { class: shape || "key", style: "background:" + colorOf(n) }, s); el("span", { text: n }, s); });
+  }
+
+  // ------------------------------------------------------------------ data slicing
+  function rangeSlice() {
+    const [, , a, b] = RANGES.find((r) => r[0] === state.range);
+    const dates = D.equity.dates;
+    let i0 = dates.findIndex((d) => d >= a); let i1 = dates.length - 1;
+    while (i1 > 0 && dates[i1] > b) i1--;
+    return { i0: Math.max(i0, 0), i1 };
+  }
+  function seriesFor(names, { i0, i1 }) {
+    return names.map((n) => {
+      const raw = D.equity.series[n];
+      const base = i0 > 0 ? raw[i0 - 1] : D.initial_capital;
+      const v = raw.slice(i0, i1 + 1).map((x) => x == null ? null : x / base * D.initial_capital);
+      return { name: n, values: v, base };
+    });
+  }
+
+  // ------------------------------------------------------------------ line chart (crosshair + tooltip)
+  function lineChart(host, dates, series, opt) {
+    host.textContent = "";
+    const W = Math.max(host.clientWidth, 320), H = opt.height || 340;
+    const m = { l: 62, r: opt.endLabels ? 168 : 16, t: 10, b: 26 };
+    const w = W - m.l - m.r, h = H - m.t - m.b, n = dates.length;
+    const svg = el("svg:svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": opt.label || "chart" }, host);
+    let lo = Infinity, hi = -Infinity;
+    series.forEach((s) => s.values.forEach((v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    if (opt.zeroTop) hi = 0;
+    if (!isFinite(lo)) return;
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const f = opt.log ? Math.log10 : (x) => x;
+    let flo = f(lo), fhi = f(hi); const pad = (fhi - flo) * 0.06; flo -= pad; if (!opt.zeroTop) fhi += pad;
+    const X = (i) => m.l + (n <= 1 ? 0 : i / (n - 1) * w);
+    const Y = (v) => m.t + h - (f(v) - flo) / (fhi - flo) * h;
+    // y ticks
+    let ticks = [];
+    if (opt.log) {
+      for (let e = Math.floor(flo) - 1; e <= Math.ceil(fhi); e++) [1, 1.5, 2, 3, 5, 7].forEach((k) => { const v = k * Math.pow(10, e); if (f(v) >= flo && f(v) <= fhi) ticks.push(v); });
+      while (ticks.length > 7) ticks = ticks.filter((_, i) => i % 2 === 0);
+    } else {
+      const st = niceStep(hi - lo, 5);
+      for (let v = Math.ceil((opt.zeroTop ? lo : lo) / st) * st; v <= hi + 1e-12; v += st) ticks.push(v);
+    }
+    const g = el("svg:g", {}, svg);
+    ticks.forEach((v) => {
+      const y = Y(v);
+      el("svg:line", { x1: m.l, x2: m.l + w, y1: y, y2: y, stroke: css("--grid"), "stroke-width": 1 }, g);
+      el("svg:text", { x: m.l - 8, y: y + 4, "text-anchor": "end", fill: css("--muted"), "font-size": 11, text: opt.fmtY(v) }, g);
+    });
+    // x ticks: years, or quarters when the range is short
+    const short = n < 500;
+    dates.forEach((d, i) => {
+      const md = d.slice(5);
+      if (md === "01-01" || (short && (md === "04-01" || md === "07-01" || md === "10-01"))) {
+        el("svg:line", { x1: X(i), x2: X(i), y1: m.t + h, y2: m.t + h + 4, stroke: css("--axis") }, g);
+        el("svg:text", { x: X(i), y: m.t + h + 17, "text-anchor": "middle", fill: css("--muted"), "font-size": 11, text: short ? d.slice(0, 7) : d.slice(0, 4) }, g);
+      }
+    });
+    el("svg:line", { x1: m.l, x2: m.l + w, y1: m.t + h, y2: m.t + h, stroke: css("--axis") }, g);
+    // lines
+    series.forEach((s) => {
+      let d = "", pen = false;
+      s.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + X(i).toFixed(1) + "," + Y(v).toFixed(1); pen = true; });
+      el("svg:path", { d, fill: "none", stroke: colorOf(s.name), "stroke-width": s.name === D.savings_name ? 1.5 : 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    });
+    // direct end labels (de-collided)
+    if (opt.endLabels) {
+      const labs = series.map((s) => { let i = s.values.length - 1; while (i > 0 && s.values[i] == null) i--; return { s, i, y: Y(s.values[i]) }; }).sort((a, b) => a.y - b.y);
+      for (let k = 1; k < labs.length; k++) if (labs[k].y - labs[k - 1].y < 15) labs[k].y = labs[k - 1].y + 15;
+      labs.forEach(({ s, i, y }) => {
+        el("svg:circle", { cx: X(i), cy: Y(s.values[i]), r: 4, fill: colorOf(s.name), stroke: css("--surface-1"), "stroke-width": 2 }, svg);
+        const t = el("svg:text", { x: m.l + w + 10, y: y + 4, "font-size": 11.5, fill: css("--text-primary") }, svg);
+        el("svg:tspan", { "font-weight": 650, text: opt.fmtEnd(s.values[i]) + " " }, t);
+        el("svg:tspan", { fill: css("--text-secondary"), text: s.name.length > 18 ? s.name.slice(0, 17) + "…" : s.name }, t);
+      });
+    }
+    // hover layer
+    const cross = el("svg:line", { y1: m.t, y2: m.t + h, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden" }, svg);
+    const dots = series.map((s) => el("svg:circle", { r: 4, fill: colorOf(s.name), stroke: css("--surface-1"), "stroke-width": 2, visibility: "hidden" }, svg));
+    const tip = el("div", { class: "tip" }, host);
+    const hit = el("svg:rect", { x: m.l, y: m.t, width: w, height: h, fill: "transparent" }, svg);
+    let cur = -1;
+    function show(i) {
+      cur = Math.max(0, Math.min(n - 1, i));
+      const x = X(cur);
+      cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
+      tip.textContent = ""; el("div", { class: "t", text: dates[cur] }, tip);
+      series.map((s, k) => ({ s, k, v: s.values[cur] })).sort((a, b) => (b.v ?? -1e18) - (a.v ?? -1e18)).forEach(({ s, k, v }) => {
+        const d = dots[k];
+        if (v == null) { d.setAttribute("visibility", "hidden"); return; }
+        d.setAttribute("cx", x); d.setAttribute("cy", Y(v)); d.setAttribute("visibility", "visible");
+        const row = el("div", { class: "row" }, tip);
+        el("span", { class: "key", style: "background:" + colorOf(s.name) }, row);
+        el("b", { text: opt.fmtTip(v) }, row); el("span", { text: s.name }, row);
+      });
+      tip.style.display = "block";
+      const scale = host.clientWidth / W;
+      const left = x * scale + 14, tw = tip.offsetWidth;
+      tip.style.left = (left + tw > host.clientWidth ? x * scale - tw - 14 : left) + "px";
+      tip.style.top = (m.t + 6) + "px";
+    }
+    function hide() { cross.setAttribute("visibility", "hidden"); dots.forEach((d) => d.setAttribute("visibility", "hidden")); tip.style.display = "none"; }
+    hit.addEventListener("pointermove", (e) => { const r = svg.getBoundingClientRect(); const px = (e.clientX - r.left) * W / r.width; show(Math.round((px - m.l) / w * (n - 1))); });
+    hit.addEventListener("pointerleave", hide);
+    host.onkeydown = (e) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const step = e.shiftKey ? 30 : 1; show((cur < 0 ? n - 1 : cur) + (e.key === "ArrowRight" ? step : -step)); }
+      if (e.key === "Escape") hide();
+    };
+    host.onblur = hide;
+  }
+
+  // ------------------------------------------------------------------ grouped column chart
+  function columnChart(host, groups, series, fmt) {
+    host.textContent = "";
+    const W = Math.max(host.clientWidth, 320), H = 280, m = { l: 52, r: 10, t: 10, b: 28 };
+    const w = W - m.l - m.r, h = H - m.t - m.b;
+    const svg = el("svg:svg", { viewBox: `0 0 ${W} ${H}`, height: H }, host);
+    let lo = 0, hi = 0;
+    series.forEach((s) => s.values.forEach((v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    const st = niceStep(hi - lo || 1, 5); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
+    const Y = (v) => m.t + h - (v - lo) / (hi - lo) * h;
+    for (let v = lo; v <= hi + 1e-9; v += st) {
+      el("svg:line", { x1: m.l, x2: m.l + w, y1: Y(v), y2: Y(v), stroke: css("--grid") }, svg);
+      el("svg:text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end", fill: css("--muted"), "font-size": 11, text: spct(v, 0) }, svg);
+    }
+    const gw = w / groups.length, ns = series.length;
+    const bw = Math.min(24, (gw * 0.8 - (ns - 1) * 2) / ns);
+    const tip = el("div", { class: "tip" }, host);
+    groups.forEach((gname, gi) => {
+      const x0 = m.l + gi * gw + (gw - (ns * bw + (ns - 1) * 2)) / 2;
+      el("svg:text", { x: m.l + gi * gw + gw / 2, y: m.t + h + 18, "text-anchor": "middle", fill: css("--muted"), "font-size": 11, text: gname }, svg);
+      series.forEach((s, si) => {
+        const v = s.values[gi]; if (v == null) return;
+        const x = x0 + si * (bw + 2), y0 = Y(0), y1 = Y(v), r = Math.min(4, Math.abs(y1 - y0) / 2, bw / 2);
+        const up = v >= 0, top = Math.min(y0, y1), bot = Math.max(y0, y1);
+        const d = up
+          ? `M${x},${bot}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${bot}Z`
+          : `M${x},${top}V${bot - r}Q${x},${bot} ${x + r},${bot}H${x + bw - r}Q${x + bw},${bot} ${x + bw},${bot - r}V${top}Z`;
+        const p = el("svg:path", { d, fill: colorOf(s.name), tabindex: 0 }, svg);
+        const hitR = el("svg:rect", { x: x - 1, y: Math.min(top, y0 - 12) - 6, width: bw + 2, height: Math.max(bot - top, 12) + 12, fill: "transparent" }, svg);
+        const on = () => {
+          p.setAttribute("opacity", 0.75);
+          tip.textContent = ""; el("div", { class: "t", text: gname }, tip);
+          const row = el("div", { class: "row" }, tip); el("span", { class: "key", style: "background:" + colorOf(s.name) }, row);
+          el("b", { text: fmt(v) }, row); el("span", { text: s.name }, row);
+          tip.style.display = "block";
+          const sc = host.clientWidth / W; let left = (x + bw + 8) * sc; if (left + tip.offsetWidth > host.clientWidth) left = x * sc - tip.offsetWidth - 8;
+          tip.style.left = left + "px"; tip.style.top = Math.max(0, top * sc - 10) + "px";
+        };
+        const off = () => { p.removeAttribute("opacity"); tip.style.display = "none"; };
+        [p, hitR].forEach((t) => { t.addEventListener("pointerenter", on); t.addEventListener("pointerleave", off); });
+        p.addEventListener("focus", on); p.addEventListener("blur", off);
+      });
+    });
+    el("svg:line", { x1: m.l, x2: m.l + w, y1: Y(0), y2: Y(0), stroke: css("--axis") }, svg);
+  }
+
+  // ------------------------------------------------------------------ scatter (nearest-point hover)
+  function scatter(host, pts) {
+    host.textContent = "";
+    const W = Math.max(host.clientWidth, 320), H = 320, m = { l: 52, r: 16, t: 10, b: 40 };
+    const w = W - m.l - m.r, h = H - m.t - m.b;
+    const svg = el("svg:svg", { viewBox: `0 0 ${W} ${H}`, height: H }, host);
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    let lo = Math.min(...xs, ...ys), hi = Math.max(...xs, ...ys); const st = niceStep(hi - lo || 1, 6);
+    lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
+    const X = (v) => m.l + (v - lo) / (hi - lo) * w, Y = (v) => m.t + h - (v - lo) / (hi - lo) * h;
+    for (let v = lo; v <= hi + 1e-9; v += st) {
+      el("svg:line", { x1: m.l, x2: m.l + w, y1: Y(v), y2: Y(v), stroke: css("--grid") }, svg);
+      el("svg:text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end", fill: css("--muted"), "font-size": 11, text: num(v, 0) }, svg);
+      el("svg:text", { x: X(v), y: m.t + h + 16, "text-anchor": "middle", fill: css("--muted"), "font-size": 11, text: num(v, 0) }, svg);
+    }
+    el("svg:text", { x: m.l + w / 2, y: H - 4, "text-anchor": "middle", fill: css("--text-secondary"), "font-size": 12, text: "In-sample Sharpe (2021–2023)" }, svg);
+    el("svg:text", { x: 12, y: m.t + h / 2, "text-anchor": "middle", fill: css("--text-secondary"), "font-size": 12, transform: `rotate(-90 12 ${m.t + h / 2})`, text: "Out-of-sample Sharpe (2024+)" }, svg);
+    el("svg:line", { x1: X(lo), y1: Y(lo), x2: X(hi), y2: Y(hi), stroke: css("--axis") }, svg);
+    pts.forEach((p) => { p.cx = X(p.x); p.cy = Y(p.y); el("svg:circle", { cx: p.cx, cy: p.cy, r: 4, fill: css("--s" + FAMILY_SLOT[p.family]), stroke: css("--surface-1"), "stroke-width": 2 }, svg); });
+    const ring = el("svg:circle", { r: 7, fill: "none", stroke: css("--text-primary"), "stroke-width": 1.5, visibility: "hidden" }, svg);
+    const tip = el("div", { class: "tip" }, host);
+    const hit = el("svg:rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (e) => {
+      const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width, py = (e.clientY - r.top) * H / r.height;
+      let best = null, bd = 24 * 24;
+      pts.forEach((p) => { const d = (p.cx - px) ** 2 + (p.cy - py) ** 2; if (d < bd) { bd = d; best = p; } });
+      if (!best) { ring.setAttribute("visibility", "hidden"); tip.style.display = "none"; return; }
+      ring.setAttribute("cx", best.cx); ring.setAttribute("cy", best.cy); ring.setAttribute("visibility", "visible");
+      tip.textContent = ""; el("div", { class: "t", text: best.family + " · " + best.label }, tip);
+      [["Sharpe IS", num(best.x)], ["Sharpe OOS", num(best.y)], ["CAGR OOS", pct(best.r.cagr_oos)], ["Max DD", pct(best.r.max_dd)]].forEach(([k, v]) => {
+        const row = el("div", { class: "row" }, tip); el("b", { text: v }, row); el("span", { text: k }, row);
+      });
+      tip.style.display = "block";
+      const sc = host.clientWidth / W; let left = best.cx * sc + 12; if (left + tip.offsetWidth > host.clientWidth) left = best.cx * sc - tip.offsetWidth - 12;
+      tip.style.left = left + "px"; tip.style.top = Math.max(0, best.cy * sc - 20) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { ring.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  }
+
+  // ------------------------------------------------------------------ tables
+  function table(host, cols, rows, sortState, onSort) {
+    host.textContent = "";
+    const t = el("table", {}, host), thead = el("thead", {}, t), tr = el("tr", {}, thead);
+    cols.forEach((c) => {
+      const th = el("th", { class: (c.num ? "num " : "") + (onSort ? "sortable" : ""), text: c.label + (sortState && sortState.key === c.key ? (sortState.dir > 0 ? " ▲" : " ▼") : "") }, tr);
+      if (onSort) th.addEventListener("click", () => onSort(c.key));
+    });
+    const tb = el("tbody", {}, t);
+    rows.forEach((r) => {
+      const row = el("tr", {}, tb);
+      cols.forEach((c) => {
+        const td = el("td", { class: c.num ? "num" : "" }, row);
+        if (c.series) el("span", { class: "key", style: "background:" + colorOf(r[c.key]) }, td);
+        td.appendChild(document.createTextNode(c.fmt ? c.fmt(r[c.key], r) : (r[c.key] ?? "–")));
+        if (c.sign && r[c.key] != null) td.classList.add(r[c.key] < 0 ? "neg" : "pos");
+      });
+    });
+  }
+  function sortRows(rows, s) {
+    return rows.slice().sort((a, b) => { const x = a[s.key], y = b[s.key]; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * s.dir; });
+  }
+
+  // ------------------------------------------------------------------ sections
+  function renderRange() {
+    const sl = rangeSlice(), names = visible();
+    const dates = D.equity.dates.slice(sl.i0, sl.i1 + 1);
+    const ser = seriesFor(names, sl);
+    legend(document.getElementById("eqLegend"), names);
+    lineChart(document.getElementById("eqChart"), dates, ser, { log: true, endLabels: true, height: 360, fmtY: compactUsd, fmtEnd: compactUsd, fmtTip: usd, label: "Equity" });
+    const dd = ser.map((s) => { let pk = -Infinity; return { name: s.name, values: s.values.map((v) => { if (v == null) return null; pk = Math.max(pk, v); return v / pk - 1; }) }; });
+    lineChart(document.getElementById("ddChart"), dates, dd, { zeroTop: true, height: 240, fmtY: (v) => pct(v, 0), fmtTip: (v) => pct(v, 2), label: "Drawdown" });
+    // range metrics
+    const rf = Math.pow(1.025, 1 / 365) - 1;
+    const rows = ser.map((s) => {
+      const vals = [s.base].concat(s.values.map((v) => v / D.initial_capital * s.base)).filter((v) => v != null);
+      const tot = vals[vals.length - 1] / vals[0] - 1, yrs = (vals.length - 1) / 365;
+      let pk = -Infinity, mdd = 0; vals.forEach((v) => { pk = Math.max(pk, v); mdd = Math.min(mdd, v / pk - 1); });
+      const r = vals.slice(1).map((v, i) => v / vals[i] - 1), mu = r.reduce((a, b) => a + b, 0) / r.length;
+      const sd = Math.sqrt(r.reduce((a, b) => a + (b - mu) ** 2, 0) / Math.max(r.length - 1, 1));
+      return { strategy: s.name, ret: tot, cagr: Math.pow(1 + tot, 1 / yrs) - 1, mdd, sharpe: sd > 1e-6 ? (mu - rf) / sd * Math.sqrt(365) : null };
+    });
+    table(document.getElementById("rangeTable"), [
+      { key: "strategy", label: "Strategy", series: true }, { key: "ret", label: "Return", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "cagr", label: "CAGR", num: true, fmt: (v) => pct(v) }, { key: "mdd", label: "Max DD", num: true, fmt: (v) => pct(v) },
+      { key: "sharpe", label: "Sharpe", num: true, fmt: (v) => num(v) }], rows);
+  }
+
+  function renderSummary() {
+    const names = new Set(visible());
+    const rows = D.summary.filter((r) => names.has(r.strategy));
+    document.getElementById("summaryNote").textContent = "Sharpe uses daily returns in excess of the 2.5% savings rate. Fees + slippage are both legs, all trades.";
+    table(document.getElementById("summaryTable"), [
+      { key: "strategy", label: "Strategy", series: true }, { key: "CAGR", label: "CAGR", num: true, fmt: (v) => pct(v), sign: true },
+      { key: "Max drawdown", label: "Max DD", num: true, fmt: (v) => pct(v) }, { key: "Sharpe", label: "Sharpe", num: true, fmt: (v) => num(v) },
+      { key: "Funding earned", label: "Funding", num: true, fmt: usd }, { key: "Fees + slippage", label: "Fees + slippage", num: true, fmt: usd },
+      { key: "Liquidations", label: "Liquidations", num: true }, { key: "Time deployed", label: "Time deployed", num: true, fmt: (v) => pct(v, 0) },
+      { key: "Avg exposure", label: "Avg exposure", num: true, fmt: (v) => pct(v, 0) }, { key: "Final equity", label: "Final equity", num: true, fmt: usd }], rows);
+    const prow = D.strategies.filter((n) => names.has(n)).map((n) => ({ strategy: n, p: Object.entries(D.params[n]).map(([k, v]) => k + "=" + v).join(", ") }));
+    table(document.getElementById("paramsTable"), [{ key: "strategy", label: "Strategy", series: true }, { key: "p", label: "Parameters" }], prow);
+  }
+
+  function renderPeriods() {
+    const names = visible();
+    const groups = [...new Set(D.periods.map((r) => r.period))];
+    const val = (n, g) => { const r = D.periods.find((x) => x.strategy === n && x.period === g); return r ? r["Total return"] : null; };
+    legend(document.getElementById("perLegend"), names, "rect");
+    columnChart(document.getElementById("perChart"), groups, names.map((n) => ({ name: n, values: groups.map((g) => val(n, g)) })), (v) => spct(v));
+    const rows = names.map((n) => { const r = { strategy: n }; groups.forEach((g) => r[g] = val(n, g)); return r; });
+    table(document.getElementById("perTable"), [{ key: "strategy", label: "Strategy", series: true }].concat(groups.map((g) => ({ key: g, label: g, num: true, fmt: (v) => spct(v), sign: true }))), rows);
+  }
+
+  function renderWorst() {
+    table(document.getElementById("worstTable"), [
+      { key: "time", label: "Date" }, { key: "strategy", label: "Strategy", series: true }, { key: "coin", label: "Coin" },
+      { key: "cause", label: "Cause" }, { key: "detail", label: "Detail" }, { key: "loss", label: "Loss", num: true, fmt: usd },
+      { key: "price_move", label: "Price move", num: true, fmt: (v) => spct(v) }, { key: "hours", label: "Held (h)", num: true }], D.worst);
+  }
+
+  const causeSel = document.getElementById("causeSel"), coinSearch = document.getElementById("coinSearch");
+  ["All causes"].concat([...new Set(D.events.map((e) => e.cause))]).forEach((c) => el("option", { value: c, text: c }, causeSel));
+  causeSel.addEventListener("change", () => { state.page = 0; renderEvents(); });
+  coinSearch.addEventListener("input", () => { state.page = 0; renderEvents(); });
+  document.getElementById("prevPg").addEventListener("click", () => { state.page = Math.max(0, state.page - 1); renderEvents(); });
+  document.getElementById("nextPg").addEventListener("click", () => { state.page++; renderEvents(); });
+  function renderEvents() {
+    const names = new Set(visible()), cause = causeSel.value, q = coinSearch.value.trim().toUpperCase();
+    let rows = D.events.filter((e) => names.has(e.strategy) && (cause === "All causes" || e.cause === cause) && (!q || e.coin.includes(q)));
+    rows = sortRows(rows, state.sort);
+    const per = 50, pages = Math.max(1, Math.ceil(rows.length / per)); state.page = Math.min(state.page, pages - 1);
+    document.getElementById("evCount").textContent = rows.length.toLocaleString("en-US") + " rows";
+    document.getElementById("pgInfo").textContent = `page ${state.page + 1} / ${pages}`;
+    table(document.getElementById("eventsTable"), [
+      { key: "time", label: "Closed" }, { key: "opened", label: "Opened" }, { key: "strategy", label: "Strategy", series: true },
+      { key: "coin", label: "Coin" }, { key: "cause", label: "Cause" }, { key: "detail", label: "Detail" },
+      { key: "pnl", label: "PnL", num: true, fmt: usd, sign: true }, { key: "funding", label: "Funding", num: true, fmt: usd },
+      { key: "fees", label: "Fees", num: true, fmt: usd }, { key: "slippage", label: "Slippage", num: true, fmt: usd },
+      { key: "price_move", label: "Price move", num: true, fmt: (v) => spct(v) }, { key: "hours", label: "Held (h)", num: true },
+      { key: "rebalances", label: "Rebal.", num: true }], rows.slice(state.page * per, (state.page + 1) * per), state.sort,
+      (k) => { state.sort = { key: k, dir: state.sort.key === k ? -state.sort.dir : -1 }; renderEvents(); });
+  }
+
+  const famSel = document.getElementById("famSel");
+  function gridLabel(r) { return r.family === "Threshold" ? `L=${r.L}, X=${pct(r.X, 0)}, Y=${pct(r.Y, 0)}` : r.family === "Rotation" ? `L=${r.L}, N=${r.N}, K=${r.K}h` : `L=${r.L}`; }
+  if (!D.grid.length) { document.getElementById("gridCard").style.display = "none"; }
+  else {
+    ["All families"].concat([...new Set(D.grid.map((r) => r.family))]).forEach((c) => el("option", { value: c, text: c }, famSel));
+    famSel.addEventListener("change", () => renderGrid());
+  }
+  function renderGrid() {
+    if (!D.grid.length) return;
+    const lg = document.getElementById("gridLegend"); lg.textContent = "";
+    Object.keys(FAMILY_SLOT).forEach((f) => { const s = el("span", {}, lg); el("span", { class: "dot", style: "background:" + css("--s" + FAMILY_SLOT[f]) }, s); el("span", { text: f }, s); });
+    const pts = D.grid.filter((r) => r.sharpe_is != null && r.sharpe_oos != null).map((r) => ({ x: r.sharpe_is, y: r.sharpe_oos, family: r.family, label: gridLabel(r), r }));
+    scatter(document.getElementById("gridChart"), pts);
+    const fam = famSel.value;
+    const rows = sortRows(D.grid.filter((r) => fam === "All families" || r.family === fam).map((r) => ({ ...r, params: gridLabel(r) })), state.gridSort);
+    document.getElementById("gridCount").textContent = rows.length + " parameter sets";
+    table(document.getElementById("gridTable"), [
+      { key: "family", label: "Family" }, { key: "params", label: "Parameters" },
+      { key: "sharpe_is", label: "Sharpe IS", num: true, fmt: (v) => num(v) }, { key: "sharpe_oos", label: "Sharpe OOS", num: true, fmt: (v) => num(v) },
+      { key: "cagr_is", label: "CAGR IS", num: true, fmt: (v) => pct(v), sign: true }, { key: "cagr_oos", label: "CAGR OOS", num: true, fmt: (v) => pct(v), sign: true },
+      { key: "cagr", label: "CAGR all", num: true, fmt: (v) => pct(v) }, { key: "max_dd", label: "Max DD", num: true, fmt: (v) => pct(v) },
+      { key: "liquidations", label: "Liq.", num: true }, { key: "funding", label: "Funding", num: true, fmt: usd },
+      { key: "costs", label: "Costs", num: true, fmt: usd }, { key: "deployed", label: "Deployed", num: true, fmt: (v) => pct(v, 0) }],
+      rows, state.gridSort, (k) => { state.gridSort = { key: k, dir: state.gridSort.key === k ? -state.gridSort.dir : -1 }; renderGrid(); });
+  }
+
+  const notes = document.getElementById("notes");
+  D.notes.concat([
+    "No lookahead: decisions use data up to the close of hour t and fill at the open of t+1. The universe for month m uses month m−1 volume.",
+    "Liquidation is checked against each hourly perp candle's HIGH (conservative vs. Binance's mark price). After a liquidation the spot leg is sold at the next candle's close.",
+    "Funding comes from Binance's archive with real settlement times; 1h/4h/8h intervals are annualized with each settlement's own interval.",
+    "Backtest only. Past funding is not a forecast.",
+  ]).forEach((t) => el("li", { text: t }, notes));
+
+  function renderAll() { paintKeys(); renderRange(); renderSummary(); renderPeriods(); renderWorst(); renderEvents(); renderGrid(); }
+
+  // theme toggle (wins over the OS setting both ways)
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const dark = getComputedStyle(root).colorScheme === "dark";
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark"); renderAll();
+  });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(renderAll, 150); });
+  renderAll();
+})();
+</script>
+</body>
+</html>
