@@ -14,11 +14,12 @@ from dataclasses import replace
 import pandas as pd
 
 import report
-from config import (OPTIMIZED_ROTATION, OPTIMIZED_ROTATION_LEVERAGE, BacktestConfig, CostConfig,
-                    DataConfig, GridConfig, PassiveParams, RiskConfig, RotationParams, ThresholdParams)
+from config import (OPTIMIZED_BASKET, OPTIMIZED_BASKET_RISK, OPTIMIZED_ROTATION,
+                    OPTIMIZED_ROTATION_LEVERAGE, BacktestConfig, CostConfig, DataConfig, GridConfig,
+                    PassiveParams, RiskConfig, RotationParams, ThresholdParams)
 from data import load_panel
 from engine import Engine
-from strategies import Passive, Rotation, Threshold
+from strategies import Basket, Passive, Rotation, Threshold
 
 
 def default_runs():
@@ -31,6 +32,7 @@ def default_runs():
         (Passive(PassiveParams("BTC"), name="Passive BTC (no rebalance)"), replace(risk, rebalance_drift=None)),
         (Rotation(OPTIMIZED_ROTATION, name="Rotation (optimized)"),
          replace(risk, leverage=OPTIMIZED_ROTATION_LEVERAGE)),
+        (Basket(OPTIMIZED_BASKET, name="Basket (optimized)"), OPTIMIZED_BASKET_RISK),
     ]
 
 

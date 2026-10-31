@@ -89,13 +89,6 @@ class RotationParams:
     min_volume: float = 0.0                    # min trailing 24h USD volume on BOTH legs to enter
 
 
-# Best rotation settings from optimize.py, chosen on 2021-2023 data only (2024+ was not used).
-# Re-run `python optimize.py` to re-tune; copy the "Chosen" line here.
-OPTIMIZED_ROTATION = RotationParams(top_n=5, rebalance_hours=8, lookback_hours=336, min_apr=0.20,
-                                    exit_apr=0.05, hold_rank=10, min_volume=100e6)
-OPTIMIZED_ROTATION_LEVERAGE = 3.0
-
-
 @dataclass
 class BasketParams:
     top_n: int = 5                             # hold the N biggest coins by volume
@@ -105,6 +98,19 @@ class BasketParams:
     resume_apr: float = 0.05
     pause_lookback_hours: int = 168
     ban_hours: int = 720                       # a coin forced out can't come back for 30 days
+
+
+# Best rotation settings from optimize.py, chosen on 2021-2023 data only (2024+ was not used).
+# Re-run `python optimize.py` to re-tune; copy the "Chosen" line here.
+OPTIMIZED_ROTATION = RotationParams(top_n=5, rebalance_hours=8, lookback_hours=336, min_apr=0.20,
+                                    exit_apr=0.05, hold_rank=10, min_volume=100e6)
+OPTIMIZED_ROTATION_LEVERAGE = 3.0
+
+# Best always-invested basket from `python optimize.py --mode basket` (chosen on 2021-2023 only):
+# top 3 coins by volume (re-picked each January), 3x short leverage, top up margin once the price
+# has covered 85% of the way to liquidation, pause a coin while its 7-day funding is below 0%.
+OPTIMIZED_BASKET = BasketParams(top_n=3, pause_apr=0.0, resume_apr=0.05)
+OPTIMIZED_BASKET_RISK = RiskConfig(leverage=3.0, rebalance_drift=None, liq_guard=0.85, liq_action="topup")
 
 
 @dataclass
