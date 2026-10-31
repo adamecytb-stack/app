@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from config import PassiveParams, RotationParams, ThresholdParams
+from config import BasketParams, PassiveParams, RotationParams, ThresholdParams
 
 
 def funding_signal(panel, lookback_hours: int = 24, kind: str = "avg") -> pd.DataFrame:
@@ -37,6 +37,9 @@ class Strategy:
 
     def decide(self, t: int, tradable: np.ndarray) -> dict | None:
         raise NotImplementedError
+
+    def on_forced_exit(self, coin: int, cause: str) -> None:
+        """The engine closed a position on its own (liquidation, stop, swap, data end)."""
 
     def params(self) -> dict:
         return {}
@@ -139,3 +142,79 @@ class Rotation(Strategy):
                 "lookback_h": self.p.lookback_hours, "min_apr": self.p.min_apr,
                 "exit_apr": self.p.exit_apr, "hold_rank": self.p.hold_rank,
                 "min_volume": self.p.min_volume}
+
+
+class Basket(Strategy):
+    """Always-invested, equal-weight basket of the N biggest coins by volume. No rotation.
+
+    Every January the N biggest coins (by December perp volume, i.e. the order of that month's
+    universe) are picked and held all year. A coin only leaves the basket when the engine forces
+    it out (swap near liquidation, liquidation, or its market data ends); its slot then goes to
+    the biggest coin in the *current* month's universe that isn't held or banned. A coin forced out
+    is banned for `ban_hours`. Optionally a coin is paused (its slice waits in savings) while its
+    trailing funding is below `pause_apr`, and resumes above `resume_apr`.
+    """
+
+    def __init__(self, p: BasketParams | None = None, name: str | None = None):
+        self.p = p or BasketParams()
+        self.name = name or f"Basket top{self.p.top_n}"
+
+    def prepare(self, panel):
+        self.coin_ix = {c: i for i, c in enumerate(panel.coins)}
+        self.months = panel.index.strftime("%Y-%m")
+        self.new_year = (panel.index.month == 1) & (panel.index.day == 1) & (panel.index.hour == 0)
+        self.universe = panel.universe
+        v24 = np.minimum(panel.perp_qvol.rolling(24, min_periods=12).sum().to_numpy(),
+                         panel.spot_qvol.rolling(24, min_periods=12).sum().to_numpy())
+        self.valid = (panel.perp_close.notna() & panel.spot_close.notna()).to_numpy() & (np.nan_to_num(v24) > 0)
+        self.sig = None
+        if self.p.pause_apr is not None:
+            self.sig = funding_signal(panel, self.p.pause_lookback_hours, "avg").to_numpy()
+        self.t = 0
+        self.basket: list[int] = []
+        self.banned: dict[int, int] = {}       # coin -> hour index when the ban ends
+        self.paused: set[int] = set()
+        self.dirty = True
+
+    def on_forced_exit(self, coin, cause):
+        self.dirty = True
+        if cause in ("swap", "liquidation", "data end"):
+            self.banned[coin] = self.t + self.p.ban_hours
+
+    def decide(self, t, tradable):
+        self.t = t
+        changed = self.dirty
+        if t == 0 or self.new_year[t]:
+            self.basket, self.banned, self.paused = [], {}, set()
+            changed = True
+        banned = {c for c, until in self.banned.items() if until > t}
+        keep = [c for c in self.basket if self.valid[t, c] and c not in banned]
+        changed |= len(keep) != len(self.basket)
+        ranking = [self.coin_ix[c] for c in self.universe.get(self.months[t], []) if c in self.coin_ix]
+        for c in ranking:
+            if len(keep) >= self.p.top_n:
+                break
+            if c not in keep and c not in banned and self.valid[t, c]:
+                keep.append(c)
+                changed = True
+        self.basket = keep
+        if self.sig is not None:
+            for c in keep:
+                s = self.sig[t, c]
+                if np.isnan(s):
+                    continue
+                if c in self.paused and s > self.p.resume_apr:
+                    self.paused.discard(c)
+                    changed = True
+                elif c not in self.paused and s < self.p.pause_apr:
+                    self.paused.add(c)
+                    changed = True
+        if not changed:
+            return None
+        self.dirty = False
+        w = 1.0 / max(len(keep), 1)
+        return {c: w for c in keep if c not in self.paused}
+
+    def params(self):
+        return {"N": self.p.top_n, "pause_apr": self.p.pause_apr, "resume_apr": self.p.resume_apr,
+                "pause_lookback_h": self.p.pause_lookback_hours, "ban_h": self.p.ban_hours}

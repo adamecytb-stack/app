@@ -175,10 +175,17 @@
     <div class="scroll" id="gridTable"></div>
   </div>
 
+  <div class="card" id="optBasketCard">
+    <h2>Basket optimizer (always invested, no rotation): does in-sample skill survive?</h2>
+    <p class="muted" id="optBasketNote"></p>
+    <div class="chart" id="optBasketChart" aria-label="Basket optimizer scatter"></div>
+    <div class="scroll" id="optBasketTable" style="margin-top:12px"></div>
+  </div>
+
   <div class="card" id="optCard">
     <h2>Rotation optimizer: does in-sample skill survive?</h2>
     <p class="muted" id="optNote"></p>
-    <div class="chart" id="optChart" aria-label="Optimizer scatter"></div>
+    <div class="chart" id="optChart" aria-label="Rotation optimizer scatter"></div>
     <div class="scroll" id="optTable" style="margin-top:12px"></div>
   </div>
 
@@ -592,30 +599,37 @@
       rows, state.gridSort, (k) => { state.gridSort = { key: k, dir: state.gridSort.key === k ? -state.gridSort.dir : -1 }; renderGrid(); });
   }
 
-  const OPT_NAME = "Rotation (optimized)";
-  function optLabel(r) {
+  function rotationLabel(r) {
     const hold = r.hold_mult == null ? "any rank" : "top " + r.hold_mult * r.top_n;
     return `N=${r.top_n}, every ${r.rebalance_hours}h, ${r.lookback_hours / 24}d avg, enter>${pct(r.min_apr, 0)}, exit<${pct(r.exit_apr, 0)}, hold ${hold}, vol≥${compactUsd(r.min_volume)}, L=${r.leverage}`;
   }
-  function renderOptimizer() {
-    const O = D.optimizer || [];
-    if (!O.length) { document.getElementById("optCard").style.display = "none"; return; }
-    const beatIs = O.filter((r) => r.cagr_is > 0.025).length, beatOos = O.filter((r) => r.cagr_oos > 0.025).length;
-    document.getElementById("optNote").textContent =
-      `${O.length} rotation settings, each a dot. Picked only on 2021–2023 CAGR (drawdown under 15%); 2024+ was never used to choose. ` +
-      `${Math.round(beatIs / O.length * 100)}% beat 2.5% savings in-sample, ${Math.round(beatOos / O.length * 100)}% out-of-sample. ` +
+  function basketLabel(r) {
+    return `top ${r.top_n}, L=${r.leverage}, ${r.liq_action} at ${pct(r.liq_guard, 0)} of the way to liquidation, pause ${r.pause}`;
+  }
+  // One card per optimizer: scatter of in-sample vs out-of-sample CAGR + the top 15 table.
+  function renderOptimizer(prefix, rows, stratName, labelFn, what) {
+    const card = document.getElementById(prefix + "Card");
+    if (!rows || !rows.length) { card.style.display = "none"; return; }
+    const beatIs = rows.filter((r) => r.cagr_is > 0.025).length, beatOos = rows.filter((r) => r.cagr_oos > 0.025).length;
+    document.getElementById(prefix + "Note").textContent =
+      `${rows.length} ${what} settings, each a dot. Picked only on 2021–2023 CAGR (drawdown under 15%); 2024+ was never used to choose. ` +
+      `${Math.round(beatIs / rows.length * 100)}% beat 2.5% savings in-sample, ${Math.round(beatOos / rows.length * 100)}% out-of-sample. ` +
       "Dots near the diagonal kept their edge; dots far below it were overfit.";
-    const pts = O.map((r, i) => ({ x: r.cagr_is, y: r.cagr_oos, label: optLabel(r), r, highlight: i === 0 ? "chosen" : null }));
-    scatter(document.getElementById("optChart"), pts, {
+    const pts = rows.map((r, i) => ({ x: r.cagr_is, y: r.cagr_oos, label: labelFn(r), r, highlight: i === 0 ? "chosen" : null }));
+    scatter(document.getElementById(prefix + "Chart"), pts, {
       xLabel: "In-sample CAGR (2021–2023)", yLabel: "Out-of-sample CAGR (2024+)", tick: (v) => pct(v, 0),
-      color: () => colorOf(OPT_NAME), refY: 0.025, refYLabel: "savings 2.5%",
+      color: () => colorOf(stratName), refY: 0.025, refYLabel: "savings 2.5%",
       tipRows: (p) => [[pct(p.x), "CAGR IS"], [pct(p.y), "CAGR OOS"], [pct(p.r.max_dd_oos), "Max DD OOS"], [String(p.r.liquidations), "liquidations"]] });
-    table(document.getElementById("optTable"), [
+    table(document.getElementById(prefix + "Table"), [
       { key: "rank", label: "#", num: true }, { key: "params", label: "Settings" },
       { key: "cagr_is", label: "CAGR IS", num: true, fmt: (v) => pct(v), sign: true }, { key: "max_dd_is", label: "Max DD IS", num: true, fmt: (v) => pct(v) },
       { key: "cagr_oos", label: "CAGR OOS", num: true, fmt: (v) => pct(v), sign: true }, { key: "max_dd_oos", label: "Max DD OOS", num: true, fmt: (v) => pct(v) },
       { key: "liquidations", label: "Liq.", num: true }, { key: "costs", label: "Costs", num: true, fmt: usd }],
-      O.slice(0, 15).map((r, i) => ({ ...r, rank: i + 1, params: optLabel(r) })));
+      rows.slice(0, 15).map((r, i) => ({ ...r, rank: i + 1, params: labelFn(r) })));
+  }
+  function renderOptimizers() {
+    renderOptimizer("optBasket", D.optimizer_basket, "Basket (optimized)", basketLabel, "basket");
+    renderOptimizer("opt", D.optimizer, "Rotation (optimized)", rotationLabel, "rotation");
   }
 
   const notes = document.getElementById("notes");
@@ -626,7 +640,7 @@
     "Backtest only. Past funding is not a forecast.",
   ]).forEach((t) => el("li", { text: t }, notes));
 
-  function renderAll() { paintKeys(); renderRange(); renderSummary(); renderPeriods(); renderWorst(); renderEvents(); renderGrid(); renderOptimizer(); }
+  function renderAll() { paintKeys(); renderRange(); renderSummary(); renderPeriods(); renderWorst(); renderEvents(); renderGrid(); renderOptimizers(); }
 
   // theme toggle (wins over the OS setting both ways)
   document.getElementById("themeBtn").addEventListener("click", () => {

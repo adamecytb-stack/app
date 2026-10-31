@@ -17,6 +17,9 @@ class DataConfig:
     always_include: tuple = ("BTC", "ETH")
     cache_dir: Path = ROOT / "cache"
     download_threads: int = 24
+    # Coins ranked in the top N of a January universe get the whole year downloaded, so a basket
+    # that holds them all year doesn't hit a fake "data end" when they drop out of the top 30.
+    full_year_top: int = 10
 
 
 @dataclass
@@ -38,6 +41,12 @@ class RiskConfig:
     rebalance_drift: float | None = 0.20
     # Optional hard stop: close both legs when price is > this fraction away from entry. None = off.
     stop_move: float | None = None
+    # Liquidation guard: act once the price has covered this fraction of the way from the last
+    # (re)balance price to the liquidation price (e.g. 0.7 = 70%). None = off.
+    liq_guard: float | None = None
+    # What to do then: "topup" = sell some spot and add margin (keep the coin),
+    #                  "swap"  = close the coin; the strategy moves the capital to another coin.
+    liq_action: str = "topup"
     # Skip resizing trades smaller than this fraction of equity (avoids fee churn).
     min_trade_frac: float = 0.02
 
@@ -85,6 +94,17 @@ class RotationParams:
 OPTIMIZED_ROTATION = RotationParams(top_n=5, rebalance_hours=8, lookback_hours=336, min_apr=0.20,
                                     exit_apr=0.05, hold_rank=10, min_volume=100e6)
 OPTIMIZED_ROTATION_LEVERAGE = 3.0
+
+
+@dataclass
+class BasketParams:
+    top_n: int = 5                             # hold the N biggest coins by volume
+    # Pause a coin (its slice sits in savings) when its trailing funding drops below pause_apr,
+    # resume when it gets back above resume_apr. pause_apr=None = always invested.
+    pause_apr: float | None = None
+    resume_apr: float = 0.05
+    pause_lookback_hours: int = 168
+    ban_hours: int = 720                       # a coin forced out can't come back for 30 days
 
 
 @dataclass

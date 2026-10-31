@@ -209,7 +209,8 @@ def build_universe(cfg: DataConfig, vols: pd.DataFrame, end_month: str) -> dict[
         top = list(v["coin"].head(cfg.universe_size))
         if len(top) < cfg.universe_size:
             print(f"  WARNING: only {len(top)} coins with volume data for {prev} (universe {m})")
-        universe[m] = list(dict.fromkeys(list(cfg.always_include) + top))
+        # Ordered by volume (biggest first); always_include coins are added if not already there.
+        universe[m] = list(dict.fromkeys(top + list(cfg.always_include)))
     return universe
 
 
@@ -293,7 +294,8 @@ class Panel:
 
 
 def _panel_key(cfg: DataConfig, end_month: str) -> str:
-    return f"{cfg.start}_{end_month}_top{cfg.universe_size}_{'-'.join(cfg.always_include)}"
+    return (f"{cfg.start}_{end_month}_top{cfg.universe_size}_{'-'.join(cfg.always_include)}"
+            f"_year{cfg.full_year_top}")
 
 
 def load_panel(cfg: DataConfig | None = None, refresh: bool = False) -> Panel:
@@ -317,6 +319,9 @@ def load_panel(cfg: DataConfig | None = None, refresh: bool = False) -> Panel:
         i = all_months.index(m)
         for c in cs:
             need.setdefault(c, set()).update(all_months[max(i - 1, 0): i + 2])
+        if m.endswith("-01"):          # January top N: whole year (+1 month) for buy-and-hold baskets
+            for c in cs[: cfg.full_year_top]:
+                need[c].update(all_months[i: i + 13])
     print(f"Universe: {len(need)} distinct coins over {len(universe)} months")
 
     jobs = [(c, kind) for c in sorted(need) for kind in RAW_KINDS]

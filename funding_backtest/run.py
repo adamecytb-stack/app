@@ -106,9 +106,10 @@ def main():
         grid = pd.read_csv(bt.output_dir / "grid_results.csv")    # keep last grid in the dashboard
 
     if not args.no_dashboard:
-        opt_path = bt.output_dir / "optimize_results.csv"
+        opt_path, bopt_path = bt.output_dir / "optimize_results.csv", bt.output_dir / "optimize_basket.csv"
         opt = pd.read_csv(opt_path) if opt_path.exists() else None
-        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir, opt)
+        bopt = pd.read_csv(bopt_path) if bopt_path.exists() else None
+        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir, opt, bopt)
         print(f"Wrote {bt.docs_dir / 'data.js'} (open docs/index.html)")
 
 

@@ -10,7 +10,9 @@ Order of operations inside every hour bar t:
     4. Spot legs left unhedged by a liquidation in bar t-1 are sold at this bar's close.
     5. Idle cash earns the savings rate.
     6. Mark to market at the close; force-close coins whose data ends (delisting).
-    7. Risk rules (optional stop, drift rebalance) and the strategy decide orders for bar t+1.
+    7. Risk rules (optional stop, liquidation guard, drift rebalance) and the strategy decide
+       orders for bar t+1. Positions the engine closes on its own (liquidation, stop, swap, data
+       end) are reported to the strategy via strategy.on_forced_exit(coin, cause).
 
 Sizing for capital C at leverage L (spot qty == short qty == q):
     q = C / (spot + perp / L)      -> spot value = q*spot, perp-leg equity = q*perp/L
@@ -113,7 +115,7 @@ class Engine:
         pos: dict[int, Position] = {}
         events: list[dict] = []
         tot = dict(funding=0.0, fees=0.0, slippage=0.0, interest=0.0, liquidations=0,
-                   stops=0, rebalances=0, data_end_closes=0, trades=0)
+                   stops=0, swaps=0, rebalances=0, data_end_closes=0, trades=0)
         equity = np.empty(T)
         deployed = np.empty(T)
         fund_h = np.zeros(T)
@@ -203,7 +205,9 @@ class Engine:
             elif cause == "stop":
                 detail = f"stop: price {price_move:+.0%} from entry"
             elif cause == "data end":
-                detail = "market data ends (delisted / no longer listed)"
+                detail = "market data ends (delisted, or left the downloaded top-30 window)"
+            elif cause == "swap":
+                detail = f"closed near liquidation ({price_move:+.0%} from entry), capital moved on"
             else:   # normal exit: name the biggest negative contributor
                 trading = pnl - p.funding + p.fees + p.slippage
                 parts = {"negative funding": p.funding, "trading costs": -(p.fees + p.slippage),
@@ -214,6 +218,8 @@ class Engine:
                 detail=detail, pnl=pnl, event_loss=event_loss, funding=p.funding, fees=p.fees,
                 slippage=p.slippage, price_move=price_move, hours=t - p.opened_at,
                 rebalances=p.rebalances))
+            if cause in ("liquidation", "stop", "data end"):
+                strategy.on_forced_exit(p.coin, cause)
 
         # ---------------- main loop
         for t in range(T):
@@ -234,15 +240,15 @@ class Engine:
                 for c, p in list(pos.items()):
                     if not p.hedged:
                         continue
-                    if forced.get(c) == "stop":
-                        close(p, t, so[t, c], po[t, c], "stop")
-                        tot["stops"] += 1
+                    if forced.get(c) in ("stop", "swap"):
+                        close(p, t, so[t, c], po[t, c], forced[c])
+                        tot["stops" if forced[c] == "stop" else "swaps"] += 1
                     elif targets is not None and targets.get(c, 0.0) <= 0.0:
                         close(p, t, so[t, c], po[t, c], "strategy exit")
                 desired: dict[int, float] = {}
                 if targets is not None:
                     for c, w in targets.items():
-                        if w > 0 and forced.get(c) != "stop" and self.has_open[t, c] and \
+                        if w > 0 and forced.get(c) not in ("stop", "swap") and self.has_open[t, c] and \
                                 (c not in pos or pos[c].hedged):
                             desired[c] = w * eq_open * CASH_BUFFER
                 for c, p in pos.items():
@@ -308,7 +314,17 @@ class Engine:
                     continue
                 if risk.stop_move is not None and abs(pc[t, c] / p.open_price - 1) > risk.stop_move:
                     forced[c] = "stop"
-                elif risk.rebalance_drift is not None and \
+                    continue
+                if risk.liq_guard is not None and pc[t, c] > p.ref_price:
+                    # How much of the way from the last (re)balance price to the liquidation price
+                    # has the price already covered? Act once it passes liq_guard (e.g. 0.7 = 70%).
+                    liq = (p.margin + p.q * p.entry) / (p.q * (1 + mmr))
+                    if pc[t, c] - p.ref_price >= risk.liq_guard * (liq - p.ref_price):
+                        forced[c] = "rebalance" if risk.liq_action == "topup" else "swap"
+                        if forced[c] == "swap":
+                            strategy.on_forced_exit(c, "swap")
+                        continue
+                if risk.rebalance_drift is not None and \
                         abs(pc[t, c] / p.ref_price - 1) > risk.rebalance_drift:
                     forced[c] = "rebalance"
             targets = strategy.decide(t, self.tradable[t])
