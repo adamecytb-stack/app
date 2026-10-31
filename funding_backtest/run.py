@@ -14,8 +14,8 @@ from dataclasses import replace
 import pandas as pd
 
 import report
-from config import (BacktestConfig, CostConfig, DataConfig, GridConfig, PassiveParams,
-                    RiskConfig, RotationParams, ThresholdParams)
+from config import (OPTIMIZED_ROTATION, OPTIMIZED_ROTATION_LEVERAGE, BacktestConfig, CostConfig,
+                    DataConfig, GridConfig, PassiveParams, RiskConfig, RotationParams, ThresholdParams)
 from data import load_panel
 from engine import Engine
 from strategies import Passive, Rotation, Threshold
@@ -27,8 +27,10 @@ def default_runs():
     return [
         (Passive(PassiveParams("BTC")), risk),
         (Threshold(ThresholdParams()), risk),
-        (Rotation(RotationParams()), risk),
+        (Rotation(RotationParams(), name="Rotation top5 (naive)"), risk),
         (Passive(PassiveParams("BTC"), name="Passive BTC (no rebalance)"), replace(risk, rebalance_drift=None)),
+        (Rotation(OPTIMIZED_ROTATION, name="Rotation (optimized)"),
+         replace(risk, leverage=OPTIMIZED_ROTATION_LEVERAGE)),
     ]
 
 
@@ -36,18 +38,20 @@ def grid_search(engine: Engine, bt: BacktestConfig, grid: GridConfig) -> pd.Data
     base = RiskConfig()
     jobs = []
     for L in grid.leverage:
-        jobs.append(("Passive", Passive(PassiveParams("BTC")), {"L": L}, L))
+        jobs.append(("Passive", lambda: Passive(PassiveParams("BTC")), {"L": L}, L))
         for X, Y in itertools.product(grid.enter_apr, grid.exit_apr):
             if Y < X:
-                jobs.append(("Threshold", Threshold(ThresholdParams(enter_apr=X, exit_apr=Y)),
+                jobs.append(("Threshold", lambda X=X, Y=Y: Threshold(ThresholdParams(enter_apr=X, exit_apr=Y)),
                              {"L": L, "X": X, "Y": Y}, L))
         for N, K in itertools.product(grid.top_n, grid.rebalance_hours):
-            jobs.append(("Rotation", Rotation(RotationParams(top_n=N, rebalance_hours=K)),
+            jobs.append(("Rotation", lambda N=N, K=K: Rotation(RotationParams(top_n=N, rebalance_hours=K)),
                          {"L": L, "N": N, "K": K}, L))
     rows, t0 = [], time.time()
     print(f"\nGrid search: {len(jobs)} runs")
-    for i, (family, strat, params, L) in enumerate(jobs, 1):
-        res = engine.run(strat, replace(base, leverage=L))
+    # Strategies are built lazily: each one holds its own signal arrays (~200 MB for rotation),
+    # so creating all of them up front runs out of memory.
+    for i, (family, make, params, L) in enumerate(jobs, 1):
+        res = engine.run(make(), replace(base, leverage=L))
         full = report.metrics(res, bt)
         is_ = report.metrics(res, bt, None, bt.is_end)
         oos = report.metrics(res, bt, bt.oos_start, None)
@@ -102,7 +106,9 @@ def main():
         grid = pd.read_csv(bt.output_dir / "grid_results.csv")    # keep last grid in the dashboard
 
     if not args.no_dashboard:
-        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir)
+        opt_path = bt.output_dir / "optimize_results.csv"
+        opt = pd.read_csv(opt_path) if opt_path.exists() else None
+        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir, opt)
         print(f"Wrote {bt.docs_dir / 'data.js'} (open docs/index.html)")
 
 

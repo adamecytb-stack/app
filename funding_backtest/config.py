@@ -80,6 +80,13 @@ class RotationParams:
     min_volume: float = 0.0                    # min trailing 24h USD volume on BOTH legs to enter
 
 
+# Best rotation settings from optimize.py, chosen on 2021-2023 data only (2024+ was not used).
+# Re-run `python optimize.py` to re-tune; copy the "Chosen" line here.
+OPTIMIZED_ROTATION = RotationParams(top_n=5, rebalance_hours=8, lookback_hours=336, min_apr=0.20,
+                                    exit_apr=0.05, hold_rank=10, min_volume=100e6)
+OPTIMIZED_ROTATION_LEVERAGE = 3.0
+
+
 @dataclass
 class GridConfig:
     leverage: list = field(default_factory=lambda: [1.0, 1.5, 2.0, 3.0])

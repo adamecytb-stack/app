@@ -216,7 +216,8 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return [{k: _clean(v) for k, v in row.items()} for row in df.to_dict("records")]
 
 
-def write_dashboard_data(results, bt, panel, summ, per, worst, grid: pd.DataFrame | None, docs_dir):
+def write_dashboard_data(results, bt, panel, summ, per, worst, grid: pd.DataFrame | None, docs_dir,
+                         optimizer: pd.DataFrame | None = None):
     """Write docs/data.js (loaded by docs/index.html). Daily equity keeps the file small."""
     daily = pd.DataFrame({r.name: r.equity.resample("1D").last() for r in results})
     sv = savings_curve(results[0].equity.index, bt).resample("1D").last()
@@ -248,6 +249,7 @@ def write_dashboard_data(results, bt, panel, summ, per, worst, grid: pd.DataFram
         "worst": _records(worst) if len(worst) else [],
         "events": _records(ev) if len(ev) else [],
         "grid": _records(grid) if grid is not None and len(grid) else [],
+        "optimizer": _records(optimizer) if optimizer is not None and len(optimizer) else [],
         "universe_coins": len(panel.coins),
         "universe_months": universe_counts,
         "notes": [SURVIVORSHIP_NOTE],
