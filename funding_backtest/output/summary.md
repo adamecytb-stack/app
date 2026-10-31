@@ -11,6 +11,7 @@ Period: 2021-01-01 to 2026-09-30, start capital $100,000
 | Rotation top5 (naive)      | -31.7% | -88.9%         | -90.4%         | -11.82   | 3.4%         | $48,615          | $135,225          |              3 |       0 | 99.6%           | 96.0%          | $11,149        |
 | Passive BTC (no rebalance) | 6.7%   | 44.8%          | -1.7%          | 4.34     | 0.9%         | $43,113          | $735              |              2 |       0 | 100.0%          | 99.6%          | $144,839       |
 | Rotation (optimized)       | 8.1%   | 56.2%          | -6.9%          | 1.46     | 3.7%         | $62,930          | $21,697           |             13 |       0 | 31.9%           | 23.3%          | $156,176       |
+| Basket (optimized)         | 8.3%   | 58.1%          | -2.1%          | 2.61     | 2.1%         | $63,215          | $13,466           |              4 |       0 | 87.3%           | 73.6%          | $158,057       |
 | Savings 2.5%               | 2.5%   | 15.3%          | 0.0%           | -        | 0.0%         | $0               | $0                |              0 |       0 | 0.0%            | 0.0%           | $115,257       |
 
 ## Return per period
@@ -22,22 +23,23 @@ Period: 2021-01-01 to 2026-09-30, start capital $100,000
 | Rotation top5 (naive)      | -13.7% | -34.7% | -31.9% | -30.3% | -41.3% | -28.9% | -13.7%      | -34.7%      | -80.2%    |
 | Passive BTC (no rebalance) | +22.8% | +1.3%  | +2.4%  | +7.9%  | +4.6%  | +0.8%  | +22.8%      | +1.3%       | +16.5%    |
 | Rotation (optimized)       | +26.8% | +2.5%  | +6.0%  | +6.8%  | +4.3%  | +1.9%  | +26.8%      | +2.5%       | +20.2%    |
+| Basket (optimized)         | +29.8% | +0.7%  | +6.0%  | +9.6%  | +2.8%  | +1.2%  | +29.8%      | +0.7%       | +20.9%    |
 | Savings 2.5%               | +2.5%  | +2.5%  | +2.5%  | +2.5%  | +2.5%  | +1.9%  | +2.5%       | +2.5%       | +9.7%     |
 
 ## 10 worst events
 
-| time             | strategy              | coin   | cause         | detail                                                  | loss   | pnl     | funding   | fees   | slippage   | price_move   |   hours |
-|:-----------------|:----------------------|:-------|:--------------|:--------------------------------------------------------|:-------|:--------|:----------|:-------|:-----------|:-------------|--------:|
-| 2021-05-19 14:00 | Rotation top5 (naive) | SUSHI  | liquidation   | short liquidated (high >= 12.0663), spot sold unhedged  | $4,730 | $-963   | $4        | $58    | $18        | -30.1%       |      13 |
-| 2021-01-30 17:00 | Rotation (optimized)  | XRP    | liquidation   | short liquidated (high >= 0.445054), spot sold unhedged | $2,335 | $-1,756 | $647      | $79    | $28        | +13.1%       |     488 |
-| 2025-11-05 18:00 | Rotation (optimized)  | GIGGLE | liquidation   | short liquidated (high >= 218.503), spot sold unhedged  | $2,267 | $-2,341 | $3        | $94    | $34        | +51.6%       |       9 |
-| 2021-01-29 05:00 | Rotation (optimized)  | XLM    | liquidation   | short liquidated (high >= 0.376214), spot sold unhedged | $2,014 | $-1,761 | $359      | $78    | $35        | +13.8%       |     284 |
-| 2022-07-13 23:00 | Rotation top5 (naive) | FLM    | liquidation   | short liquidated (high >= 0.193435), spot sold unhedged | $1,780 | $-1,780 | $5        | $25    | $12        | +46.0%       |      94 |
-| 2025-03-18 02:00 | Rotation (optimized)  | BNX    | data end      | market data ends (delisted / no longer listed)          | $1,762 | $-1,762 | $1,165    | $206   | $109       | +84.9%       |     137 |
-| 2021-05-20 01:00 | Rotation top5 (naive) | DENT   | strategy exit | basis / price gap                                       | $1,501 | $-1,501 | $-113     | $102   | $49        | -44.0%       |      24 |
-| 2021-01-15 14:00 | Rotation (optimized)  | LINK   | liquidation   | short liquidated (high >= 21.4802), spot sold unhedged  | $1,475 | $-1,156 | $444      | $98    | $38        | +41.6%       |     269 |
-| 2025-11-05 07:00 | Rotation (optimized)  | GIGGLE | liquidation   | short liquidated (high >= 132.131), spot sold unhedged  | $1,000 | $-1,034 | $1        | $65    | $21        | +29.3%       |       6 |
-| 2025-05-02 01:00 | Rotation top5 (naive) | ALPACA | strategy exit | basis / price gap                                       | $991   | $-991   | $1        | $7     | $196       | +0.0%        |      24 |
+| time             | strategy              | coin   | cause         | detail                                                            | loss   | pnl     | funding   | fees   | slippage   | price_move   |   hours |
+|:-----------------|:----------------------|:-------|:--------------|:------------------------------------------------------------------|:-------|:--------|:----------|:-------|:-----------|:-------------|--------:|
+| 2021-05-19 14:00 | Rotation top5 (naive) | SUSHI  | liquidation   | short liquidated (high >= 12.0663), spot sold unhedged            | $4,730 | $-963   | $4        | $58    | $18        | -30.1%       |      13 |
+| 2021-01-30 17:00 | Rotation (optimized)  | XRP    | liquidation   | short liquidated (high >= 0.445054), spot sold unhedged           | $2,335 | $-1,756 | $647      | $79    | $28        | +13.1%       |     488 |
+| 2025-11-05 18:00 | Rotation (optimized)  | GIGGLE | liquidation   | short liquidated (high >= 218.503), spot sold unhedged            | $2,267 | $-2,341 | $3        | $94    | $34        | +51.6%       |       9 |
+| 2021-01-29 05:00 | Rotation (optimized)  | XLM    | liquidation   | short liquidated (high >= 0.376214), spot sold unhedged           | $2,014 | $-1,761 | $359      | $78    | $35        | +13.8%       |     284 |
+| 2022-07-13 23:00 | Rotation top5 (naive) | FLM    | liquidation   | short liquidated (high >= 0.193435), spot sold unhedged           | $1,780 | $-1,780 | $5        | $25    | $12        | +46.0%       |      94 |
+| 2025-03-18 02:00 | Rotation (optimized)  | BNX    | data end      | market data ends (delisted, or left the downloaded top-30 window) | $1,762 | $-1,762 | $1,165    | $206   | $109       | +84.9%       |     137 |
+| 2021-05-20 01:00 | Rotation top5 (naive) | DENT   | strategy exit | basis / price gap                                                 | $1,501 | $-1,501 | $-113     | $102   | $49        | -44.0%       |      24 |
+| 2021-10-06 14:00 | Basket (optimized)    | BTC    | liquidation   | short liquidated (high >= 56104.9), spot sold unhedged            | $1,489 | $-1,485 | $52       | $88    | $24        | +29.1%       |     172 |
+| 2021-01-15 14:00 | Rotation (optimized)  | LINK   | liquidation   | short liquidated (high >= 21.4802), spot sold unhedged            | $1,475 | $-1,156 | $444      | $98    | $38        | +41.6%       |     269 |
+| 2025-11-05 07:00 | Rotation (optimized)  | GIGGLE | liquidation   | short liquidated (high >= 132.131), spot sold unhedged            | $1,000 | $-1,034 | $1        | $65    | $21        | +29.3%       |       6 |
 
 ## Notes
 

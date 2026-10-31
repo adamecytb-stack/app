@@ -12,7 +12,8 @@ pip install -r requirements.txt
 python run.py            # compare the strategies with the defaults in config.py
 python run.py --grid     # also run the grid search (~3 min)
 python run.py --refresh  # rebuild the panel (picks up newly published months)
-python optimize.py       # re-tune the rotation (~4 min on 4 cores), see below
+python optimize.py --mode basket     # re-tune the always-invested basket (~7 min on 4 cores)
+python optimize.py --mode rotation   # re-tune the rotation (~4 min on 4 cores)
 ```
 
 The first run downloads about 25k small files from `data.binance.vision` (5-10 min) and caches
@@ -27,6 +28,7 @@ Outputs:
 | `output/summary.csv`, `periods.csv`, `worst_events.csv` | the same as CSV |
 | `output/grid_results.csv` | every grid run: full period, in-sample (2021-23), out-of-sample (2024+) |
 | `output/optimize_results.csv` | every rotation setting the optimizer tried |
+| `output/optimize_basket.csv` | every basket setting the optimizer tried |
 | `../docs/index.html` + `data.js` | interactive dashboard (GitHub Pages) |
 
 ### Dashboard (GitHub Pages)
@@ -41,11 +43,11 @@ static page with no build step. `run.py` rewrites `docs/data.js` on every run.
 |---|---|
 | `config.py` | every setting: fees, slippage, leverage, X/Y/N/K, grid values |
 | `data.py` | download + cache, point-in-time universe, hourly panel |
-| `strategies.py` | Passive, Threshold, Rotation: they only output target weights |
+| `strategies.py` | Passive, Threshold, Rotation, Basket: they only output target weights |
 | `engine.py` | hourly simulation: fills, fees, slippage, funding, liquidations, events |
 | `report.py` | metrics, tables, PNG chart, dashboard data |
 | `run.py` | command line + grid search |
-| `optimize.py` | rotation tuning: random search on 2021-23, checked on 2024+ |
+| `optimize.py` | strategy tuning (basket grid / rotation random search) on 2021-23, checked on 2024+ |
 
 ## How the simulation works
 
@@ -86,21 +88,70 @@ It's off by default.
 
 | Strategy | CAGR | Max DD | Funding | Fees+slip | Liq. | Avg exposure |
 |---|---|---|---|---|---|---|
+| **Basket (optimized)** | **8.3%** | -2.1% | $63.2k | $13.5k | 4 | 74% |
+| Rotation (optimized) | 8.1% | -6.9% | $62.9k | $21.7k | 13 | 23% |
+| Passive BTC, no rebalance | 6.7% | -1.7% | $43.1k | $0.7k | 2 | 100% |
 | Passive BTC | 6.1% | -1.2% | $45.6k | $5.0k | 0 | 100% |
 | Threshold BTC (X=15%, Y=5%) | 6.0% | -1.2% | $29.4k | $4.0k | 0 | 25% |
 | Rotation top 5, every 24h (naive) | -31.7% | -90.4% | $48.6k | $135k | 3 | 96% |
-| **Rotation (optimized)** | **8.1%** | -6.9% | $62.9k | $21.7k | 13 | 23% |
-| Passive BTC, no rebalance | 6.7% | -1.7% | $43.1k | $0.7k | 2 | 100% |
 | Savings 2.5% | 2.5% | 0% | – | – | – | – |
 
 Return per year:
 
 | | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 (to Sep) |
 |---|---|---|---|---|---|---|
+| Basket (optimized) | +29.8% | +0.7% | +6.0% | +9.6% | +2.8% | +1.2% |
+| Rotation (optimized) | +26.8% | +2.5% | +6.0% | +6.8% | +4.3% | +1.9% |
 | Passive BTC | +19.2% | +1.8% | +4.5% | +6.4% | +3.0% | +1.1% |
 | Threshold BTC | +18.8% | +2.4% | +3.4% | +6.2% | +2.5% | +1.9% |
-| Rotation (optimized) | +26.8% | +2.5% | +6.0% | +6.8% | +4.3% | +1.9% |
 | Savings | +2.5% | +2.5% | +2.5% | +2.5% | +2.5% | +1.9% |
+
+The honest comparison is the **2024+ column** (data no strategy was tuned on):
+
+| Strategy | 2021-23 (tuning period) | 2024+ (unseen) |
+|---|---|---|
+| Basket (optimized) | +11.5%/yr | **+4.9%/yr**, max DD -0.3% |
+| Rotation (optimized) | +11.2%/yr | +4.7%/yr, max DD -3.8% |
+| Threshold BTC, best grid setting | +9.7%/yr | +4.5%/yr |
+| Passive BTC | +8.2%/yr | +3.8%/yr |
+
+## Always-invested basket (no rotation)
+
+`Basket` keeps the whole $100k invested in the basis trade, equal weight across the **N biggest
+coins by volume**. They are picked each January from December's volume and held all year. Coins
+are not rotated on funding. A coin only leaves when:
+
+- **it gets close to liquidation** and the rule is `liq_action="swap"`. "Close" is measured from
+  the last (re)balance price: act once the price has covered `liq_guard` of the way to the
+  liquidation price (0.85 = 85%). With `liq_action="topup"` the coin is kept instead: some spot is
+  sold and the short's margin is topped back up to the target leverage.
+- **it was liquidated anyway** (a candle jumped past the guard), or **its market data ends**
+  (delisting).
+
+The free slot goes to the biggest coin in the current month's top-30 that isn't held or banned. A
+coin forced out can't come back for 30 days. Optionally (`pause_apr`) a coin's slice waits in
+2.5% savings while its 7-day funding is below 0%, and goes back in above 5%.
+
+`python optimize.py --mode basket` tests every combination (648) of N = 1/2/3/5/8/10, leverage
+1-5x, guard at 50/70/85%, top-up vs swap, and three pause rules. It picks on 2021-23 only.
+
+**Chosen:** top 3 coins, 3x, top up at 85% of the way to liquidation, pause on negative funding
+(`OPTIMIZED_BASKET` in `config.py`).
+
+What the grid says (median out-of-sample CAGR across all settings):
+
+- **Almost everything works:** 95% of all 648 settings beat savings out-of-sample (vs 46% for
+  rotation). Not rotating is much more robust.
+- **...but the settings barely matter going forward.** In-sample results range from +1% to
+  +11.5%/yr, yet nearly all land in the same 3-5%/yr band out-of-sample. Expect about 4-5%/yr from
+  2024-style markets, whatever you pick.
+- **More leverage stops paying above 2-3x.** Median out-of-sample CAGR by leverage: 1x 3.5%,
+  1.5x 3.8%, 2x 4.1%, 3x 3.9%, 4x 3.9%, 5x 3.5%. Median liquidations climb from 0 (≤1.5x) to 12 (5x).
+- **Act late, not early:** a guard at 85% beats 50%, because early action means many costly top-ups.
+- **Top-up vs swap:** about the same (4.0% vs 3.6% median). Top-up trades less.
+- **Pausing on negative funding helps a little** (4.0% vs 3.7% median).
+- **Fewer coins did slightly better** (top 1-2: ~4.4%; top 8-10: ~3.3%). Bigger coins have
+  steadier funding and cheaper trading.
 
 ## Making the rotation profitable
 
@@ -139,7 +190,7 @@ the more comfortable choice if you'd rather give up a little return; set
 
 Other takeaways:
 
-- **BTC basis trades beat savings, mostly thanks to 2021.** Since 2022 they make about 2-6%/yr.
+- **2021 was the outlier.** Every strategy made 19-30% in 2021 and 1-10%/yr since.
 - **Threshold BTC earns about the same as Passive while deployed only 25% of the time.**
 - **Fees, not funding, decide these strategies.** The naive and optimized rotations collect similar
   funding ($49k vs $63k). The difference is costs ($135k vs $22k).
