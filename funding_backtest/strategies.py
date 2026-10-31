@@ -88,10 +88,14 @@ class Threshold(Strategy):
 
 
 class Rotation(Strategy):
-    """Every K hours hold the top N coins by trailing funding, max `max_weight` each.
+    """Every K hours hold up to N coins with the highest trailing funding, max `max_weight` each.
 
-    Only coins in that month's universe, with live spot+perp markets and funding above
-    `min_apr`, are candidates. Unused capital stays in cash (earning savings).
+    Entry: coin is in that month's universe, has live spot+perp markets, trailing funding above
+    `min_apr` and enough volume (`min_volume`). Free slots go to the best such coins.
+    Hold: a coin already held is kept while its funding stays above `exit_apr` and its rank stays
+    within `hold_rank` - this hysteresis is what keeps turnover (and fees) down.
+    With exit_apr=None and hold_rank=None it is the plain "top N every K hours" rotation.
+    Unused capital stays in cash (earning savings).
     """
 
     def __init__(self, p: RotationParams | None = None, name: str | None = None):
@@ -100,17 +104,38 @@ class Rotation(Strategy):
 
     def prepare(self, panel):
         self.sig = funding_signal(panel, self.p.lookback_hours, "avg").to_numpy()
+        # Trailing 24h volume of the thinner leg: liquidity filter and tie-breaker (many coins sit
+        # exactly at Binance's default 0.01%/8h = 10.95% APR, so ties are common).
+        v = np.minimum(panel.perp_qvol.rolling(24, min_periods=12).sum().to_numpy(),
+                       panel.spot_qvol.rolling(24, min_periods=12).sum().to_numpy())
+        self.vol = np.nan_to_num(v)
+        self.held: list[int] = []
 
     def decide(self, t, tradable):
-        if t % self.p.rebalance_hours != 0:
+        p = self.p
+        if t % p.rebalance_hours != 0:
             return None
-        s = np.where(tradable, self.sig[t], np.nan)
-        s = np.where(s > self.p.min_apr, s, np.nan)
-        valid = np.flatnonzero(~np.isnan(s))
-        picks = valid[np.argsort(-s[valid])][: self.p.top_n]
-        w = min(1.0 / self.p.top_n, self.p.max_weight)
-        return {int(c): w for c in picks}
+        ok = tradable & ~np.isnan(self.sig[t])
+        s = np.where(ok, self.sig[t], -np.inf)
+        order = np.lexsort((-self.vol[t], -s))          # by funding, then by volume
+        rank = np.empty_like(order)
+        rank[order] = np.arange(len(order))
+        exit_apr = p.min_apr if p.exit_apr is None else p.exit_apr
+        hold_rank = p.top_n if p.hold_rank is None else p.hold_rank
+        keep = [c for c in self.held if ok[c] and s[c] > exit_apr and rank[c] < hold_rank]
+        keep = sorted(keep, key=lambda c: rank[c])[: p.top_n]
+        for c in order:
+            if len(keep) >= p.top_n or s[c] <= p.min_apr:
+                break
+            if c in keep or self.vol[t, c] < p.min_volume:
+                continue
+            keep.append(int(c))
+        self.held = keep
+        w = min(1.0 / p.top_n, p.max_weight)
+        return {c: w for c in keep}
 
     def params(self):
         return {"N": self.p.top_n, "K_hours": self.p.rebalance_hours, "max_w": self.p.max_weight,
-                "lookback_h": self.p.lookback_hours, "min_apr": self.p.min_apr}
+                "lookback_h": self.p.lookback_hours, "min_apr": self.p.min_apr,
+                "exit_apr": self.p.exit_apr, "hold_rank": self.p.hold_rank,
+                "min_volume": self.p.min_volume}

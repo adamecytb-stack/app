@@ -73,7 +73,11 @@ class RotationParams:
     rebalance_hours: int = 24                  # K
     max_weight: float = 0.20
     lookback_hours: int = 24
-    min_apr: float = 0.05                      # only hold coins whose avg funding is above this
+    min_apr: float = 0.05                      # enter: only buy coins whose avg funding is above this
+    # --- turnover controls (the defaults below = the original naive rotation) ---
+    exit_apr: float | None = None              # exit a held coin only below this (None = min_apr)
+    hold_rank: int | None = None               # keep a held coin while its rank <= this (None = N)
+    min_volume: float = 0.0                    # min trailing 24h USD volume on BOTH legs to enter
 
 
 @dataclass
