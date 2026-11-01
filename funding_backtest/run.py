@@ -14,7 +14,8 @@ from dataclasses import replace
 import pandas as pd
 
 import report
-from config import (OPTIMIZED_BASKET, OPTIMIZED_BASKET_RISK, OPTIMIZED_ROTATION,
+from config import (BASKET_NO_RESERVE, BASKET_NO_RESERVE_RISK, OPTIMIZED_BASKET,
+                    OPTIMIZED_BASKET_RISK, OPTIMIZED_ROTATION,
                     OPTIMIZED_ROTATION_LEVERAGE, BacktestConfig, CostConfig, DataConfig, GridConfig,
                     PassiveParams, RiskConfig, RotationParams, ThresholdParams)
 from data import load_panel
@@ -29,7 +30,7 @@ def default_runs():
         (Passive(PassiveParams("BTC")), risk),
         (Threshold(ThresholdParams()), risk),
         (Rotation(RotationParams(), name="Rotation top5 (naive)"), risk),
-        (Passive(PassiveParams("BTC"), name="Passive BTC (no rebalance)"), replace(risk, rebalance_drift=None)),
+        (Basket(BASKET_NO_RESERVE, name="Basket (no reserve)"), BASKET_NO_RESERVE_RISK),
         (Rotation(OPTIMIZED_ROTATION, name="Rotation (optimized)"),
          replace(risk, leverage=OPTIMIZED_ROTATION_LEVERAGE)),
         (Basket(OPTIMIZED_BASKET, name="Basket (optimized)"), OPTIMIZED_BASKET_RISK),

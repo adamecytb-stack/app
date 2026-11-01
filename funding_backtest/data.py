@@ -116,11 +116,18 @@ def _cached_json(path, builder):
 
 
 def last_full_month(cfg: DataConfig) -> str:
-    """Latest month for which the archive has BTC funding (funding is only published monthly)."""
+    """Latest month for which the archive has BOTH the monthly funding file and the monthly 1h
+    price files (perp and spot) for BTC. Binance publishes them on different days, so funding
+    alone isn't enough."""
+    def latest(prefix):
+        _, keys = _list(prefix)
+        return {re.findall(r"(\d{4}-\d{2})\.zip$", k)[0] for k in keys if k.endswith(".zip")}
+
     def build():
-        _, keys = _list("data/futures/um/monthly/fundingRate/BTCUSDT/")
-        months = sorted(re.findall(r"(\d{4}-\d{2})\.zip$", k)[0] for k in keys if k.endswith(".zip"))
-        return {"month": months[-1], "checked": pd.Timestamp.utcnow().strftime("%Y-%m-%d")}
+        common = (latest("data/futures/um/monthly/fundingRate/BTCUSDT/")
+                  & latest("data/futures/um/monthly/klines/BTCUSDT/1h/")
+                  & latest("data/spot/monthly/klines/BTCUSDT/1h/"))
+        return {"month": max(common), "checked": pd.Timestamp.utcnow().strftime("%Y-%m-%d")}
     path = cfg.cache_dir / "meta" / "last_month.json"
     info = _cached_json(path, build)
     if info["checked"] != pd.Timestamp.utcnow().strftime("%Y-%m-%d"):   # re-check once a day
@@ -249,13 +256,18 @@ def load_raw(cfg: DataConfig, kind: str, symbol: str, months: list[str]) -> pd.D
     tried = set(json.loads(meta.read_text())) if meta.exists() else set()
     todo = [m for m in months if m not in tried]
     if todo:
-        new = [d for d in (_fetch_raw(kind, symbol, m) for m in todo) if d is not None]
+        fetched = [_fetch_raw(kind, symbol, m) for m in todo]
+        new = [d for d in fetched if d is not None]
         if new:
             df = pd.concat(([df] if df is not None else []) + new, ignore_index=True)
             df = df.drop_duplicates("time").sort_values("time").reset_index(drop=True)
             folder.mkdir(parents=True, exist_ok=True)
             df.to_parquet(pq, index=False)
-        tried |= set(todo)          # 404s (coin not listed that month) are remembered too
+        # 404s (coin not listed that month) are remembered, except for the last two months:
+        # Binance sometimes publishes a month's files days apart, so those are retried next run.
+        recent = (pd.Timestamp.utcnow().to_period("M") - 2).strftime("%Y-%m")
+        got = {m for m, d in zip(todo, fetched) if d is not None}
+        tried |= {m for m in todo if m in got or m <= recent}
         folder.mkdir(parents=True, exist_ok=True)
         meta.write_text(json.dumps(sorted(tried)))
     return df if df is not None else pd.DataFrame()

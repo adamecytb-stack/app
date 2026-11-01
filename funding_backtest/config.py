@@ -118,11 +118,19 @@ OPTIMIZED_ROTATION = RotationParams(top_n=5, rebalance_hours=8, lookback_hours=3
                                     exit_apr=0.05, hold_rank=10, min_volume=100e6)
 OPTIMIZED_ROTATION_LEVERAGE = 3.0
 
-# Best always-invested basket from `python optimize.py --mode basket` (chosen on 2021-2023 only):
-# top 3 coins by volume (re-picked each January), 3x short leverage, top up margin once the price
-# has covered 85% of the way to liquidation, pause a coin while its 7-day funding is below 0%.
-OPTIMIZED_BASKET = BasketParams(top_n=3, pause_apr=0.0, resume_apr=0.05)
-OPTIMIZED_BASKET_RISK = RiskConfig(leverage=3.0, rebalance_drift=None, liq_guard=0.85, liq_action="topup")
+# Best always-invested basket from `python optimize.py --mode basket`, chosen on 2021-2023 only
+# (highest CAGR with zero liquidations): the 5 best-paying coins (90-day funding) among the 15
+# biggest, picked each January and held all year; 5x short leverage with a 5% cash reserve that
+# auto-adds margin before a liquidation; top up at 85% of the way to liquidation; pause a coin
+# while its 7-day funding is negative.
+OPTIMIZED_BASKET = BasketParams(top_n=5, pause_apr=0.0, resume_apr=0.05, select_by="funding")
+OPTIMIZED_BASKET_RISK = RiskConfig(leverage=5.0, rebalance_drift=None, liq_guard=0.85, liq_action="topup",
+                                   reserve_frac=0.05, auto_add_margin=True)
+
+# The previous best basket (before the loss controls), kept for comparison: top 3 by volume, 3x,
+# no cash reserve.
+BASKET_NO_RESERVE = BasketParams(top_n=3, pause_apr=0.0, resume_apr=0.05)
+BASKET_NO_RESERVE_RISK = RiskConfig(leverage=3.0, rebalance_drift=None, liq_guard=0.85, liq_action="topup")
 
 
 @dataclass

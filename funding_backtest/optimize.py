@@ -9,6 +9,8 @@ but never used to pick anything, so they are an honest estimate of how the chose
 would have done going forward. Costs stay at the conservative defaults in config.py.
 
 Score = in-sample CAGR, among configs whose in-sample max drawdown is better than -15%.
+Basket mode is stricter (the goal there is to avoid losses): it also requires zero liquidations
+in the in-sample period.
 Writes output/optimize_results.csv (rotation) or output/optimize_basket.csv (basket).
 """
 from __future__ import annotations
@@ -100,13 +102,18 @@ def evaluate(cfg: dict) -> dict:
     return {**cfg,
             "cagr_is": is_["CAGR"], "sharpe_is": is_["Sharpe"], "max_dd_is": is_["Max drawdown"],
             "cagr_oos": oos["CAGR"], "sharpe_oos": oos["Sharpe"], "max_dd_oos": oos["Max drawdown"],
+            "liq_is": is_["Liquidations"], "liq_oos": oos["Liquidations"],
             "cagr": full["CAGR"], "max_dd": full["Max drawdown"], "liquidations": full["Liquidations"],
             "funding": full["Funding earned"], "costs": full["Fees + slippage"],
             "exposure": full["Avg exposure"], "positions": len(res.events)}
 
 
 def score(row) -> float:
-    return row["cagr_is"] if row["max_dd_is"] > MAX_DD_IS else -1.0
+    if row["max_dd_is"] <= MAX_DD_IS:
+        return -1.0
+    if row["mode"] == "basket" and row["liq_is"] > 0:
+        return -1.0 + row["cagr_is"] / 100        # ranked below every liquidation-free config
+    return row["cagr_is"]
 
 
 def run_pool(cfgs: list[dict], label: str) -> pd.DataFrame:
@@ -165,7 +172,7 @@ def main():
     df = df.sort_values("score", ascending=False).reset_index(drop=True)
     df.to_csv(_BT.output_dir / out, index=False)
 
-    show = df.head(15)[cols + ["cagr_is", "max_dd_is", "cagr_oos", "max_dd_oos", "liquidations", "positions"]].copy()
+    show = df.head(15)[cols + ["cagr_is", "max_dd_is", "liq_is", "cagr_oos", "max_dd_oos", "liq_oos", "positions"]].copy()
     for c in ["cagr_is", "max_dd_is", "cagr_oos", "max_dd_oos"]:
         show[c] = show[c].map(lambda v: f"{v:+.1%}")
     print(f"\nTop 15 by in-sample score (2021-2023) - out-of-sample (2024+) shown, not used:")
