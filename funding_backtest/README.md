@@ -23,9 +23,11 @@ Outputs:
 
 | File | What |
 |---|---|
-| `output/summary.md` | metrics table, return per period, 10 worst events |
+| `output/summary.md` | metrics, return per period, 10 worst events, year-by-year breakdown, 12-month return percentiles |
 | `output/equity.png` | equity curves vs 2.5% savings, plus drawdowns |
 | `output/summary.csv`, `periods.csv`, `worst_events.csv` | the same as CSV |
+| `output/yearly_breakdown.csv` | per strategy and year: start/end balance, profit $ and %, funding, costs, liquidations, max DD |
+| `output/rolling_12m.csv` | per strategy: 5th/25th/50th/75th/95th percentile of 12-month returns |
 | `output/grid_results.csv` | every grid run: full period, in-sample (2021-23), out-of-sample (2024+) |
 | `output/optimize_results.csv` | every rotation setting the optimizer tried |
 | `output/optimize_basket.csv` | every basket setting the optimizer tried |
@@ -76,8 +78,18 @@ the next candle's close, and the event is logged. Funding is credited to the mar
 collected funding pushes the liquidation price further away.
 
 **Rebalancing (default on).** When the perp price moves more than 20% from the last (re)balance,
-both legs are resized back to the target leverage (fees paid). Set
-`RiskConfig.rebalance_drift = None` to turn it off. "Passive BTC (no rebalance)" shows that case.
+both legs are resized back to the target leverage (fees paid). A top-up only trims the short and
+sells a slice of spot; it doesn't close and re-open the whole short, which would cost twice the
+fees. Set `RiskConfig.rebalance_drift = None` to turn it off.
+
+**Loss controls (optional, used by the optimized basket).**
+- `liq_guard` + `liq_action`: act once the price has covered e.g. 85% of the way from the last
+  (re)balance to the liquidation price, either by topping up (`"topup"`) or closing the coin (`"swap"`).
+- `reserve_frac` + `auto_add_margin`: keep e.g. 5% of equity as cash (earning savings). If a
+  candle would hit a short's liquidation price, margin moves over from the reserve first, like
+  Binance's "auto-add margin". It's free, with no trade. The next close re-balances the position
+  and refills the reserve.
+- `vol_k`: volatility-scaled leverage per coin (calm coins get more, jumpy coins less).
 
 **Optional stop.** `RiskConfig.stop_move = 0.30` closes both legs after a 30% move from entry.
 It's off by default.
@@ -86,72 +98,95 @@ It's off by default.
 
 ## Results snapshot (2021-01 to 2026-09)
 
-| Strategy | CAGR | Max DD | Funding | Fees+slip | Liq. | Avg exposure |
+| Strategy | CAGR | Max DD | Funding | Fees+slip | Liq. | Final ($100k start) |
 |---|---|---|---|---|---|---|
-| **Basket (optimized)** | **8.3%** | -2.1% | $63.2k | $13.5k | 4 | 74% |
-| Rotation (optimized) | 8.1% | -6.9% | $62.9k | $21.7k | 13 | 23% |
-| Passive BTC, no rebalance | 6.7% | -1.7% | $43.1k | $0.7k | 2 | 100% |
-| Passive BTC | 6.1% | -1.2% | $45.6k | $5.0k | 0 | 100% |
-| Threshold BTC (X=15%, Y=5%) | 6.0% | -1.2% | $29.4k | $4.0k | 0 | 25% |
-| Rotation top 5, every 24h (naive) | -31.7% | -90.4% | $48.6k | $135k | 3 | 96% |
-| Savings 2.5% | 2.5% | 0% | – | – | – | – |
+| **Basket (optimized)** | **8.4%** | **-2.4%** | $69.6k | $15.6k | **0** | $158.7k |
+| Rotation (optimized) | 9.2% | -6.5% | $64.1k | $14.2k | 13 | $165.9k |
+| Basket (no reserve) | 8.0% | -3.9% | $63.0k | $12.3k | 6 | $155.6k |
+| Passive BTC | 6.6% | -1.2% | $46.2k | $1.3k | 0 | $144.8k |
+| Threshold BTC (X=15%, Y=5%) | 6.1% | -1.2% | $29.5k | $2.9k | 0 | $140.8k |
+| Rotation top 5, every 24h (naive) | -30.7% | -89.7% | $49.5k | $135.7k | 3 | $12.1k |
+| Savings 2.5% | 2.5% | 0% | – | – | – | $115.3k |
 
 Return per year:
 
 | | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 (to Sep) |
 |---|---|---|---|---|---|---|
-| Basket (optimized) | +29.8% | +0.7% | +6.0% | +9.6% | +2.8% | +1.2% |
-| Rotation (optimized) | +26.8% | +2.5% | +6.0% | +6.8% | +4.3% | +1.9% |
-| Passive BTC | +19.2% | +1.8% | +4.5% | +6.4% | +3.0% | +1.1% |
-| Threshold BTC | +18.8% | +2.4% | +3.4% | +6.2% | +2.5% | +1.9% |
+| Basket (optimized) | +29.2% | +1.2% | +6.5% | +10.7% | +1.2% | +1.6% |
+| Rotation (optimized) | +31.0% | +2.5% | +6.4% | +8.6% | +5.0% | +1.9% |
+| Basket (no reserve) | +30.6% | +0.8% | +3.1% | +10.0% | +2.9% | +1.3% |
+| Passive BTC | +20.3% | +2.3% | +4.9% | +7.4% | +3.1% | +1.3% |
+| Threshold BTC | +19.6% | +2.5% | +3.4% | +6.4% | +2.5% | +1.9% |
 | Savings | +2.5% | +2.5% | +2.5% | +2.5% | +2.5% | +1.9% |
 
-The honest comparison is the **2024+ column** (data no strategy was tuned on):
+The honest comparison is **2024+** (data no strategy was tuned on):
 
 | Strategy | 2021-23 (tuning period) | 2024+ (unseen) |
 |---|---|---|
-| Basket (optimized) | +11.5%/yr | **+4.9%/yr**, max DD -0.3% |
-| Rotation (optimized) | +11.2%/yr | +4.7%/yr, max DD -3.8% |
-| Threshold BTC, best grid setting | +9.7%/yr | +4.5%/yr |
-| Passive BTC | +8.2%/yr | +3.8%/yr |
+| Rotation (optimized) | +12.6%/yr | **+5.6%/yr**, max DD -3.8%, 13 liquidations over the whole run |
+| Basket (optimized) | +11.7%/yr | **+4.8%/yr**, max DD -0.5%, 0 liquidations |
+| Threshold BTC, best grid setting | +10.0%/yr | +4.6%/yr |
+| Passive BTC, best grid setting | +8.9%/yr | +4.3%/yr |
+
+### Year by year: Basket (optimized)
+
+| Year | Start | End | Profit | Profit % | Funding | Fees + slip | Liq. | Max DD |
+|---|---|---|---|---|---|---|---|---|
+| 2021 | $100,000 | $129,218 | +$29,218 | +29.2% | $34,862 | $3,830 | 0 | -2.4% |
+| 2022 | $129,218 | $130,756 | +$1,538 | +1.2% | $2,649 | $3,237 | 0 | -0.3% |
+| 2023 | $130,756 | $139,317 | +$8,562 | +6.5% | $9,372 | $1,592 | 0 | -1.1% |
+| 2024 | $139,317 | $154,195 | +$14,878 | +10.7% | $15,884 | $1,635 | 0 | -0.4% |
+| 2025 | $154,195 | $156,116 | +$1,921 | +1.2% | $3,797 | $3,462 | 0 | -0.5% |
+| 2026 (to Sep) | $156,116 | $158,663 | +$2,547 | +1.6% | $3,046 | $1,799 | 0 | -0.2% |
+
+Every strategy and year is in `output/yearly_breakdown.csv` and in the dashboard's "Year by year" card.
+
+### How good or bad can a year get? (12-month return percentiles)
+
+Return over every 12-month window (one per start day, 1,734 windows). p5 = only 5% of 12-month
+periods were worse; median = a typical year; p95 = only 5% were better.
+
+| Strategy | Worst | p5 | p25 | Median | p75 | p95 | Best | 12m windows below savings |
+|---|---|---|---|---|---|---|---|---|
+| Basket (optimized) | +1.1% | +1.4% | +2.5% | +4.1% | +9.9% | +12.1% | +29.2% | 25% |
+| Rotation (optimized) | +2.3% | +2.4% | +2.5% | +5.2% | +8.3% | +16.5% | +32.5% | 29% |
+| Passive BTC | +1.9% | +2.1% | +3.0% | +4.3% | +7.0% | +10.0% | +20.4% | 14% |
+| Threshold BTC | +2.3% | +2.5% | +2.5% | +3.4% | +5.9% | +9.3% | +19.7% | 16% |
+| Savings | +2.5% | +2.5% | +2.5% | +2.5% | +2.5% | +2.5% | +2.5% | – |
+
+No 12-month window lost money for any of these. But a typical year makes about 4-5%, and a
+quarter of all 12-month windows did worse than plain savings.
 
 ## Always-invested basket (no rotation)
 
-`Basket` keeps the whole $100k invested in the basis trade, equal weight across the **N biggest
-coins by volume**. They are picked each January from December's volume and held all year. Coins
-are not rotated on funding. A coin only leaves when:
+`Basket` keeps the money invested in the basis trade, equal weight across N coins picked each
+January and held all year. Coins are not rotated on funding. A coin only leaves when:
 
-- **it gets close to liquidation** and the rule is `liq_action="swap"`. "Close" is measured from
-  the last (re)balance price: act once the price has covered `liq_guard` of the way to the
-  liquidation price (0.85 = 85%). With `liq_action="topup"` the coin is kept instead: some spot is
-  sold and the short's margin is topped back up to the target leverage.
-- **it was liquidated anyway** (a candle jumped past the guard), or **its market data ends**
-  (delisting).
+- **it gets close to liquidation** and the rule is `liq_action="swap"` (with `"topup"`, the default
+  chosen, it is kept and its margin is topped up instead),
+- **it was liquidated anyway**, or **its market data ends** (delisting).
 
-The free slot goes to the biggest coin in the current month's top-30 that isn't held or banned. A
-coin forced out can't come back for 30 days. Optionally (`pause_apr`) a coin's slice waits in
+The free slot goes to the biggest coin in the current month's top 30 that isn't held or banned.
+A coin forced out can't come back for 30 days. Optionally (`pause_apr`) a coin's slice waits in
 2.5% savings while its 7-day funding is below 0%, and goes back in above 5%.
 
-`python optimize.py --mode basket` tests every combination (648) of N = 1/2/3/5/8/10, leverage
-1-5x, guard at 50/70/85%, top-up vs swap, and three pause rules. It picks on 2021-23 only.
+**Chosen** (`OPTIMIZED_BASKET` in `config.py`): the 5 best-paying coins (90-day funding) among the
+15 biggest, 5x short leverage, a **5% cash reserve with auto-add margin**, top up at 85% of the way
+to liquidation, pause on negative funding. Picked by `python optimize.py --mode basket` (512
+settings) as the highest 2021-23 CAGR **with zero liquidations in 2021-23**.
 
-**Chosen:** top 3 coins, 3x, top up at 85% of the way to liquidation, pause on negative funding
-(`OPTIMIZED_BASKET` in `config.py`).
+What the grid says:
 
-What the grid says (median out-of-sample CAGR across all settings):
-
-- **Almost everything works:** 95% of all 648 settings beat savings out-of-sample (vs 46% for
-  rotation). Not rotating is much more robust.
-- **...but the settings barely matter going forward.** In-sample results range from +1% to
-  +11.5%/yr, yet nearly all land in the same 3-5%/yr band out-of-sample. Expect about 4-5%/yr from
-  2024-style markets, whatever you pick.
-- **More leverage stops paying above 2-3x.** Median out-of-sample CAGR by leverage: 1x 3.5%,
-  1.5x 3.8%, 2x 4.1%, 3x 3.9%, 4x 3.9%, 5x 3.5%. Median liquidations climb from 0 (≤1.5x) to 12 (5x).
-- **Act late, not early:** a guard at 85% beats 50%, because early action means many costly top-ups.
-- **Top-up vs swap:** about the same (4.0% vs 3.6% median). Top-up trades less.
-- **Pausing on negative funding helps a little** (4.0% vs 3.7% median).
-- **Fewer coins did slightly better** (top 1-2: ~4.4%; top 8-10: ~3.3%). Bigger coins have
-  steadier funding and cheaper trading.
+- **The cash reserve is what removes the losses.** Share of settings with zero liquidations over the
+  whole run: 9% with no reserve, 79% with 5%, 96% with 10%, 100% with 20%. And it barely costs
+  return: median 2024+ CAGR 4.3% (no reserve) vs 4.5% (5%).
+- **Almost everything beats savings:** 97% of settings did out-of-sample.
+- **...but the settings barely matter going forward.** Nearly all land at 3-5%/yr on 2024+.
+- **Picking coins by funding didn't really help out-of-sample** (median 4.0% vs 4.7% for picking by
+  volume). It happened to top the in-sample ranking. The same setup picked by volume made +4.8%
+  on 2024+, the same.
+- **Volatility-scaled leverage didn't help** (median 4.0% vs 4.6%).
+- **Act late, not early:** a guard at 85% beat 50% (fewer costly top-ups). **Top-up ≈ swap.**
 
 ## Making the rotation profitable
 
@@ -164,36 +199,46 @@ eat everything. The fix is to trade less, using four optional settings in `Rotat
 | `lookback_hours` | average funding over a longer window, so the ranking stops flickering | 336 (14 days) |
 | `min_apr` / `exit_apr` | hysteresis: enter above X, only exit below Y | enter > 20%, exit < 5% |
 | `hold_rank` | keep a held coin while it stays in the top M (not just the top N) | top 10 (N = 5) |
-| `min_volume` | only enter coins with enough daily volume on both legs (less slippage, fewer squeezes) | $100M |
+| `min_volume` | only enter coins with enough daily volume on both legs | $100M |
 
 Plus N = 5 coins, checked every 8h, 3x short leverage (`OPTIMIZED_ROTATION` in `config.py`).
+`python optimize.py --mode rotation` tried 330 settings and picked the best 2021-23 CAGR: +12.6%
+in-sample, **+5.6%/yr on 2024+**. 92% of settings beat savings in-sample, 61% out-of-sample.
 
-**How it was chosen (and why to be skeptical):** `optimize.py` tried 330 settings and picked the
-one with the best **2021-2023** CAGR among those with drawdown under 15%. Data from 2024 on was
-never used to choose. Results:
-
-| | 2021-23 (tuned on) | 2024+ (unseen) |
-|---|---|---|
-| Rotation (optimized) CAGR | +11.2% | **+4.7%** |
-| Max drawdown | -6.9% | -3.8% |
-| Share of all 330 settings beating savings | 91% | 46% |
-
-So the strategy now makes money, but out of sample it earns about half its in-sample return,
-roughly the same as the much simpler Threshold BTC (+4.5%/yr on 2024+). Take the
-out-of-sample number as the realistic one.
-
-Risk note: at 3x leverage it had 13 liquidations, mostly fast pumps in alts (XRP/XLM in Jan 2021,
-GIGGLE in Nov 2025). Each cost 1-2.5% of equity because positions are capped at 20%. The same
-settings at **2x** made 9.6% in-sample and 4.6% out-of-sample with only 3 liquidations. That is
-the more comfortable choice if you'd rather give up a little return; set
+Risk note: at 3x it had 13 liquidations (fast alt pumps). The same settings at **2x** made +10.9%
+in-sample and +5.5% out-of-sample with only 3 liquidations. That is the calmer choice: set
 `OPTIMIZED_ROTATION_LEVERAGE = 2.0`.
 
-Other takeaways:
+## Can it make 15%+ a year?
 
-- **2021 was the outlier.** Every strategy made 19-30% in 2021 and 1-10%/yr since.
-- **Threshold BTC earns about the same as Passive while deployed only 25% of the time.**
-- **Fees, not funding, decide these strategies.** The naive and optimized rotations collect similar
-  funding ($49k vs $63k). The difference is costs ($135k vs $22k).
+Not as a delta-neutral funding trade on Binance in today's market. The ceiling is set by how
+much funding the market pays. This is the sum of all funding paid per year (the return on a 1x
+short, **before any fees**):
+
+| Year | BTC | ETH | 5 biggest coins |
+|---|---|---|---|
+| 2021 | 30.6% | 37.5% | 37.9% |
+| 2022 | 4.2% | 0.8% | -5.2% |
+| 2023 | 7.9% | 8.3% | -2.7% |
+| 2024 | 12.0% | 13.0% | 13.4% |
+| 2025 | 5.1% | 4.9% | 3.6% |
+| 2026 (to Sep) | 2.2% | 1.4% | 0.5% |
+
+At 5x short leverage about 83% of the capital is in the trade, so even with zero fees the most a
+majors basket could make is roughly 0.83 × these numbers. That is about 4% in 2025 and well under
+2% in 2026. 15%+ only happened in hot bull markets (2021, almost 2024). To aim higher you'd have
+to change what the strategy is, for example:
+
+- **Borrow to scale the whole trade** (more than 100% of capital in it): only pays when funding is
+  above the borrow rate, which it mostly wasn't after 2021.
+- **Add directional exposure** (hold some spot unhedged): then returns depend on the crypto price,
+  and losses can be large.
+- **Stack yield on the legs:** staking yield on the spot leg (e.g. ETH), interest on the margin.
+  That's maybe +2-4%/yr (this is how Ethena works), but it's not in this data.
+- **Other venues** where funding runs higher (smaller exchanges, on-chain perps): more exchange
+  and counterparty risk, and not in this data.
+- **Cheaper execution** (maker orders, VIP fees): the optimized basket paid $15.6k in fees+slippage
+  against $69.6k funding. Halving that adds about +1%/yr.
 
 ## Known limitations
 
