@@ -170,6 +170,10 @@ class Basket(Strategy):
         self.sig = None
         if self.p.pause_apr is not None:
             self.sig = funding_signal(panel, self.p.pause_lookback_hours, "avg").to_numpy()
+        self.sel_sig = None
+        if self.p.select_by == "funding":
+            self.sel_sig = funding_signal(panel, self.p.select_lookback_hours, "avg").to_numpy()
+        self.year_pick: list[int] = []         # this year's picks, in order
         self.t = 0
         self.basket: list[int] = []
         self.banned: dict[int, int] = {}       # coin -> hour index when the ban ends
@@ -186,12 +190,13 @@ class Basket(Strategy):
         changed = self.dirty
         if t == 0 or self.new_year[t]:
             self.basket, self.banned, self.paused = [], {}, set()
+            self.year_pick = self._pick(t)
             changed = True
         banned = {c for c, until in self.banned.items() if until > t}
         keep = [c for c in self.basket if self.valid[t, c] and c not in banned]
         changed |= len(keep) != len(self.basket)
         ranking = [self.coin_ix[c] for c in self.universe.get(self.months[t], []) if c in self.coin_ix]
-        for c in ranking:
+        for c in self.year_pick + ranking:      # January picks first, then biggest by volume
             if len(keep) >= self.p.top_n:
                 break
             if c not in keep and c not in banned and self.valid[t, c]:
@@ -215,6 +220,19 @@ class Basket(Strategy):
         w = 1.0 / max(len(keep), 1)
         return {c: w for c in keep if c not in self.paused}
 
+    def _pick(self, t) -> list[int]:
+        """January picks: the N biggest by volume, or the N best payers among the biggest."""
+        ranked = [self.coin_ix[c] for c in self.universe.get(self.months[t], []) if c in self.coin_ix]
+        ranked = [c for c in ranked if self.valid[t, c]]
+        if self.sel_sig is None:
+            return ranked[: self.p.top_n]
+        pool = ranked[: self.p.select_pool]
+        f = {c: self.sel_sig[t, c] for c in pool}
+        if all(np.isnan(v) for v in f.values()):            # no funding history yet (first day)
+            return pool[: self.p.top_n]
+        return sorted(pool, key=lambda c: -np.nan_to_num(f[c], nan=-1e9))[: self.p.top_n]
+
     def params(self):
         return {"N": self.p.top_n, "pause_apr": self.p.pause_apr, "resume_apr": self.p.resume_apr,
-                "pause_lookback_h": self.p.pause_lookback_hours, "ban_h": self.p.ban_hours}
+                "pause_lookback_h": self.p.pause_lookback_hours, "ban_h": self.p.ban_hours,
+                "select_by": self.p.select_by}

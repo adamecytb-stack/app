@@ -146,6 +146,20 @@
   </div>
 
   <div class="card">
+    <h2>Year by year</h2>
+    <p class="muted">Balance at the start and end of each year, profit in $ and %, where it came from, and the worst dip inside the year. Scoped by the strategy toggles above. Click a column to sort.</p>
+    <div class="tablebar"><select id="yearSel" aria-label="Year"></select></div>
+    <div class="scroll" id="yearTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>12-month returns: how good or bad can a year get?</h2>
+    <p class="muted">Return over every 12-month window (one per start day). Thin line = 5th to 95th percentile, thick bar = middle half (25th–75th), dot = median (a typical year). Values are in the table below.</p>
+    <div class="chart" id="rollChart" aria-label="12-month return distribution"></div>
+    <div class="scroll" id="rollTable" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
     <h2>10 worst events</h2>
     <p class="muted">Liquidations count what the event itself cost (hedged value just before vs cash recovered); other rows are whole-position losses.</p>
     <div class="scroll" id="worstTable"></div>
@@ -540,6 +554,74 @@
     table(document.getElementById("perTable"), [{ key: "strategy", label: "Strategy", series: true }].concat(groups.map((g) => ({ key: g, label: g, num: true, fmt: (v) => spct(v), sign: true }))), rows);
   }
 
+  // ------------------------------------------------------------------ year by year
+  const yearSel = document.getElementById("yearSel");
+  ["All years"].concat([...new Set((D.years || []).map((r) => String(r.year)))]).forEach((y) => el("option", { value: y, text: y }, yearSel));
+  yearSel.addEventListener("change", () => renderYears());
+  state.yearSort = { key: "year", dir: 1 };
+  function renderYears() {
+    const names = new Set(visible()), y = yearSel.value;
+    let rows = (D.years || []).filter((r) => names.has(r.strategy) && (y === "All years" || String(r.year) === y))
+      .map((r) => ({ ...r, yearLabel: r.months >= 12 ? String(r.year) : `${r.year} (${r.months} mo)`, order: ALL.indexOf(r.strategy) }));
+    rows = rows.slice().sort((a, b) => {
+      const k = state.yearSort.key, x = a[k], z = b[k];
+      if (x !== z) return (x < z ? -1 : 1) * state.yearSort.dir;
+      return a.order - b.order;
+    });
+    table(document.getElementById("yearTable"), [
+      { key: "year", label: "Year", fmt: (v, r) => r.yearLabel }, { key: "strategy", label: "Strategy", series: true },
+      { key: "start", label: "Start", num: true, fmt: usd }, { key: "end", label: "End", num: true, fmt: usd },
+      { key: "profit", label: "Profit", num: true, fmt: usd, sign: true }, { key: "profit_pct", label: "Profit %", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "funding", label: "Funding", num: true, fmt: usd }, { key: "costs", label: "Fees + slip", num: true, fmt: usd },
+      { key: "liquidations", label: "Liq.", num: true }, { key: "max_dd", label: "Max DD", num: true, fmt: (v) => pct(v) },
+      { key: "exposure", label: "Invested", num: true, fmt: (v) => pct(v, 0) }], rows, state.yearSort,
+      (k) => { state.yearSort = { key: k, dir: state.yearSort.key === k ? -state.yearSort.dir : (k === "year" || k === "strategy" ? 1 : -1) }; renderYears(); });
+  }
+
+  // ------------------------------------------------------------------ 12-month distribution (range chart)
+  function renderRolling() {
+    const names = visible();
+    const rows = (D.rolling12 || []).filter((r) => names.includes(r.strategy)).sort((a, b) => ALL.indexOf(a.strategy) - ALL.indexOf(b.strategy));
+    const host = document.getElementById("rollChart"); host.textContent = "";
+    if (!rows.length) return;
+    const rowH = 30, W = Math.max(host.clientWidth, 320), m = { l: 190, r: 70, t: 8, b: 26 };
+    const H = m.t + m.b + rows.length * rowH, w = W - m.l - m.r;
+    const svg = el("svg:svg", { viewBox: `0 0 ${W} ${H}`, height: H }, host);
+    let lo = Math.min(0, ...rows.map((r) => r.p5)), hi = Math.max(0, ...rows.map((r) => r.p95));
+    const st = niceStep(hi - lo || 0.1, 6); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
+    const X = (v) => m.l + (v - lo) / (hi - lo) * w;
+    for (let v = lo; v <= hi + 1e-9; v += st) {
+      el("svg:line", { x1: X(v), x2: X(v), y1: m.t, y2: H - m.b, stroke: Math.abs(v) < 1e-9 ? css("--axis") : css("--grid") }, svg);
+      el("svg:text", { x: X(v), y: H - m.b + 16, "text-anchor": "middle", fill: css("--muted"), "font-size": 11, text: spct(v, 0) }, svg);
+    }
+    const tip = el("div", { class: "tip" }, host);
+    rows.forEach((r, i) => {
+      const y = m.t + i * rowH + rowH / 2, col = colorOf(r.strategy);
+      el("svg:text", { x: m.l - 10, y: y + 4, "text-anchor": "end", fill: css("--text-primary"), "font-size": 12, text: r.strategy }, svg);
+      el("svg:line", { x1: X(r.p5), x2: X(r.p95), y1: y, y2: y, stroke: col, "stroke-width": 2, "stroke-linecap": "round" }, svg);
+      el("svg:rect", { x: X(r.p25), y: y - 5, width: Math.max(X(r.p75) - X(r.p25), 2), height: 10, rx: 4, fill: col }, svg);
+      el("svg:circle", { cx: X(r.median), cy: y, r: 5, fill: col, stroke: css("--surface-1"), "stroke-width": 2 }, svg);
+      el("svg:text", { x: W - m.r + 8, y: y + 4, fill: css("--text-primary"), "font-size": 11.5, "font-weight": 650, text: spct(r.median) }, svg);
+      const hit = el("svg:rect", { x: 0, y: y - rowH / 2, width: W, height: rowH, fill: "transparent", tabindex: 0 }, svg);
+      const on = () => {
+        tip.textContent = ""; el("div", { class: "t", text: r.strategy }, tip);
+        [["p95", "best 5% of years above"], ["p75", "75th percentile"], ["median", "median (typical year)"], ["p25", "25th percentile"], ["p5", "worst 5% of years below"]].forEach(([k, lab]) => {
+          const row = el("div", { class: "row" }, tip); el("span", { class: "key", style: "background:" + col }, row); el("b", { text: spct(r[k]) }, row); el("span", { text: lab }, row);
+        });
+        tip.style.display = "block";
+        const sc = host.clientWidth / W; tip.style.left = Math.min(X(r.p95) * sc + 12, host.clientWidth - tip.offsetWidth) + "px"; tip.style.top = Math.max(0, (y - 20) * sc) + "px";
+      };
+      const off = () => { tip.style.display = "none"; };
+      hit.addEventListener("pointerenter", on); hit.addEventListener("pointerleave", off); hit.addEventListener("focus", on); hit.addEventListener("blur", off);
+    });
+    table(document.getElementById("rollTable"), [
+      { key: "strategy", label: "Strategy", series: true }, { key: "worst", label: "Worst", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "p5", label: "5th pct", num: true, fmt: (v) => spct(v), sign: true }, { key: "p25", label: "25th", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "median", label: "Median", num: true, fmt: (v) => spct(v), sign: true }, { key: "p75", label: "75th", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "p95", label: "95th pct", num: true, fmt: (v) => spct(v), sign: true }, { key: "best", label: "Best", num: true, fmt: (v) => spct(v), sign: true },
+      { key: "share_negative", label: "Years < 0", num: true, fmt: (v) => pct(v, 0) }, { key: "share_below_savings", label: "Years < savings", num: true, fmt: (v) => pct(v, 0) }], rows);
+  }
+
   function renderWorst() {
     table(document.getElementById("worstTable"), [
       { key: "time", label: "Date" }, { key: "strategy", label: "Strategy", series: true }, { key: "coin", label: "Coin" },
@@ -640,7 +722,7 @@
     "Backtest only. Past funding is not a forecast.",
   ]).forEach((t) => el("li", { text: t }, notes));
 
-  function renderAll() { paintKeys(); renderRange(); renderSummary(); renderPeriods(); renderWorst(); renderEvents(); renderGrid(); renderOptimizers(); }
+  function renderAll() { paintKeys(); renderRange(); renderSummary(); renderPeriods(); renderYears(); renderRolling(); renderWorst(); renderEvents(); renderGrid(); renderOptimizers(); }
 
   // theme toggle (wins over the OS setting both ways)
   document.getElementById("themeBtn").addEventListener("click", () => {

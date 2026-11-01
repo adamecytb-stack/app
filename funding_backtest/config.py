@@ -47,6 +47,13 @@ class RiskConfig:
     # What to do then: "topup" = sell some spot and add margin (keep the coin),
     #                  "swap"  = close the coin; the strategy moves the capital to another coin.
     liq_action: str = "topup"
+    # Keep this share of equity as a cash reserve (earning savings) instead of in positions...
+    reserve_frac: float = 0.0
+    # ...and use it to auto-add margin to a short about to be liquidated (no trade, no fee).
+    auto_add_margin: bool = False
+    # Volatility-scaled leverage: per coin, lev = min(leverage, 1 / (vol_k * 30-day daily vol)),
+    # i.e. the liquidation price stays ~vol_k daily moves away. None = same leverage for all coins.
+    vol_k: float | None = None
     # Skip resizing trades smaller than this fraction of equity (avoids fee churn).
     min_trade_frac: float = 0.02
 
@@ -98,6 +105,11 @@ class BasketParams:
     resume_apr: float = 0.05
     pause_lookback_hours: int = 168
     ban_hours: int = 720                       # a coin forced out can't come back for 30 days
+    # How the January basket is picked: "volume" = the N biggest coins; "funding" = among the
+    # `select_pool` biggest, the N with the highest funding over the last `select_lookback_hours`.
+    select_by: str = "volume"
+    select_pool: int = 15
+    select_lookback_hours: int = 2160          # 90 days
 
 
 # Best rotation settings from optimize.py, chosen on 2021-2023 data only (2024+ was not used).

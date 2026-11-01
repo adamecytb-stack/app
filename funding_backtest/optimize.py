@@ -1,6 +1,6 @@
 """Tune a strategy on in-sample data, then check it on data it never saw.
 
-    python optimize.py --mode basket     # always-invested basket: full grid (648 runs, ~6 min)
+    python optimize.py --mode basket     # always-invested basket: full grid (512 runs, ~6 min)
     python optimize.py --mode rotation   # funding rotation: 300 random configs + leverage refinement
     python optimize.py --mode rotation --samples 100   # quicker
 
@@ -48,12 +48,18 @@ PAUSE_RULES = {                            # name -> (pause below, resume above)
     "<0%/>5%": (0.0, 0.05),
     "<-10%/>0%": (-0.10, 0.0),
 }
+# First basket grid (648 runs) settled guard=85%, top-up ~ swap, and leverage <= 5x; this grid
+# tests the loss controls on top: cash reserve with auto-add margin, volatility-scaled leverage,
+# and picking the January basket by funding instead of volume.
 BASKET_SPACE = {
-    "top_n": [1, 2, 3, 5, 8, 10],
-    "leverage": [1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
-    "liq_guard": [0.5, 0.7, 0.85],
-    "liq_action": ["topup", "swap"],
-    "pause": list(PAUSE_RULES),
+    "top_n": [1, 2, 3, 5],
+    "leverage": [2.0, 3.0, 4.0, 5.0],
+    "reserve": [0.0, 0.05, 0.10, 0.20],
+    "vol_k": [None, 8.0],
+    "select_by": ["volume", "funding"],
+    "pause": ["off", "<0%/>5%"],
+    "liq_guard": [0.85],
+    "liq_action": ["topup"],
 }
 
 _ENGINE: Engine | None = None
@@ -71,9 +77,14 @@ def rotation_params(cfg: dict) -> RotationParams:
 
 def basket_setup(cfg: dict) -> tuple[BasketParams, RiskConfig]:
     pause_apr, resume_apr = PAUSE_RULES[cfg["pause"]]
-    params = BasketParams(top_n=int(cfg["top_n"]), pause_apr=pause_apr, resume_apr=resume_apr)
+    params = BasketParams(top_n=int(cfg["top_n"]), pause_apr=pause_apr, resume_apr=resume_apr,
+                          select_by=cfg.get("select_by", "volume"))
+    vol_k = cfg.get("vol_k")
+    reserve = float(cfg.get("reserve", 0.0))
     risk = replace(RiskConfig(), leverage=float(cfg["leverage"]), rebalance_drift=None,
-                   liq_guard=float(cfg["liq_guard"]), liq_action=cfg["liq_action"])
+                   liq_guard=float(cfg["liq_guard"]), liq_action=cfg["liq_action"],
+                   reserve_frac=reserve, auto_add_margin=reserve > 0,
+                   vol_k=None if vol_k is None or vol_k != vol_k else float(vol_k))
     return params, risk
 
 

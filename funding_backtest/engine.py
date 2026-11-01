@@ -50,6 +50,8 @@ class Position:
     fees: float = 0.0
     slippage: float = 0.0
     rebalances: int = 0
+    lev: float = 1.5           # this position's short leverage (can differ per coin)
+    auto_added: float = 0.0    # margin moved in from the cash reserve since the last (re)balance
 
     def value(self, ps: float, pp: float) -> float:
         v = self.q * ps
@@ -87,6 +89,10 @@ class Engine:
         self.pv24 = panel.perp_qvol.rolling(24, min_periods=12).sum().to_numpy()
         self.sv24 = panel.spot_qvol.rolling(24, min_periods=12).sum().to_numpy()
         self.fr = panel.funding_rate.fillna(0.0).to_numpy()
+        # Trailing 30-day daily volatility of each perp (known at the close of each bar), used by
+        # the optional volatility-scaled leverage.
+        logret = np.log(pc_ff).diff()
+        self.vol_d = (logret.rolling(720, min_periods=240).std() * np.sqrt(24)).to_numpy()
         valid = (panel.perp_close.notna() & panel.spot_close.notna())
         self.tradable = (valid & panel.in_universe.astype(bool)
                          & (self.pv24 > 0) & (self.sv24 > 0)).to_numpy()
@@ -115,7 +121,20 @@ class Engine:
         pos: dict[int, Position] = {}
         events: list[dict] = []
         tot = dict(funding=0.0, fees=0.0, slippage=0.0, interest=0.0, liquidations=0,
-                   stops=0, swaps=0, rebalances=0, data_end_closes=0, trades=0)
+                   stops=0, swaps=0, rebalances=0, data_end_closes=0, trades=0,
+                   auto_margin_events=0, auto_margin_added=0.0)
+        scale = CASH_BUFFER * (1 - risk.reserve_frac)     # share of equity put into positions
+        last_targets: dict = {}
+
+        def lev_for(c: int, t: int) -> float:
+            """Short leverage for coin c when (re)sizing at the open of bar t."""
+            if risk.vol_k is None:
+                return L
+            v = self.vol_d[max(t - 1, 0), c]
+            if not v > 0:                     # no 30-day history yet (new listing): be careful
+                return min(L, 1.5)
+            # liquidation distance ~ 1/lev; keep it at least vol_k daily standard deviations away
+            return float(min(L, max(1.0, 1.0 / (risk.vol_k * v))))
         equity = np.empty(T)
         deployed = np.empty(T)
         fund_h = np.zeros(T)
@@ -138,7 +157,8 @@ class Engine:
                 slip += n * s
             # Perp leg. A full reset (cover everything, re-short q_new) realizes the PnL, which
             # is needed when unrealized profit is too big to leave the margin at target.
-            target_m = q_new * pp / L - q_new * (p.entry - pp) if p.q > 0 else q_new * pp / L
+            Lp = p.lev
+            target_m = q_new * pp / Lp - q_new * (p.entry - pp) if p.q > 0 else q_new * pp / Lp
             if p.q > 0 and q_new > 0 and target_m < 0:
                 reset_perp = True
             legs = [(-p.q, p.q), (q_new, 0.0)] if (reset_perp and p.q > 0) else [(dq, p.q)]
@@ -158,8 +178,9 @@ class Engine:
                     if q_before + d <= 1e-12:
                         p.entry = 0.0
             p.q = q_new
-            target_m = q_new * pp / L - q_new * (p.entry - pp) if q_new > 0 else 0.0
+            target_m = q_new * pp / Lp - q_new * (p.entry - pp) if q_new > 0 else 0.0
             flow -= target_m - p.margin
+            p.auto_added = 0.0
             p.margin = target_m
             flow -= fees
             cash += flow
@@ -250,10 +271,12 @@ class Engine:
                     for c, w in targets.items():
                         if w > 0 and forced.get(c) not in ("stop", "swap") and self.has_open[t, c] and \
                                 (c not in pos or pos[c].hedged):
-                            desired[c] = w * eq_open * CASH_BUFFER
+                            desired[c] = w * eq_open * scale
                 for c, p in pos.items():
                     if p.hedged and c not in desired and forced.get(c) == "rebalance":
-                        desired[c] = p.value(so[t, c], po[t, c])
+                        # back to the strategy's target size (this also refills the cash reserve)
+                        w = last_targets.get(c)
+                        desired[c] = w * eq_open * scale if w else p.value(so[t, c], po[t, c])
                 # reductions first so they free up cash for increases
                 cur = {c: (pos[c].value(so[t, c], po[t, c]) if c in pos else 0.0) for c in desired}
                 for c in sorted(desired, key=lambda k: desired[k] - cur[k]):
@@ -262,19 +285,35 @@ class Engine:
                     if c in pos and not is_rebal and abs(C - V) < risk.min_trade_frac * eq_open:
                         continue
                     ps, pp = so[t, c], po[t, c]
-                    q_new = C / (ps + pp / L)
+                    lev = lev_for(c, t)
+                    q_new = C / (ps + pp / lev)
                     if c not in pos:
                         pos[c] = Position(coin=c, open_price=pp, opened_at=t)
                     p = pos[c]
+                    p.lev = lev
                     if is_rebal:
                         p.rebalances += 1
                         tot["rebalances"] += 1
-                    trade(p, q_new, t, ps, pp, reset_perp=is_rebal)
+                    # Top-ups only trim the short (no full close/re-open); trade() still realizes
+                    # the PnL itself when it has to (price fell a lot).
+                    trade(p, q_new, t, ps, pp, reset_perp=False)
 
             # 3. liquidation check on the bar's high
             for c, p in pos.items():
                 if p.hedged and p.q > 0:
                     liq = (p.margin + p.q * p.entry) / (p.q * (1 + mmr))
+                    if ph[t, c] >= liq and risk.auto_add_margin and cash > 0:
+                        # Auto-add margin from the cash reserve (like Binance's auto-add margin):
+                        # just enough to keep the liquidation price above this bar's high. No fee.
+                        need = ph[t, c] * (1 + mmr) * p.q * 1.002 - p.q * p.entry - p.margin
+                        add = min(need, cash)
+                        p.margin += add
+                        p.auto_added += add
+                        p.cash_flow -= add
+                        cash -= add
+                        tot["auto_margin_events"] += 1
+                        tot["auto_margin_added"] += add
+                        liq = (p.margin + p.q * p.entry) / (p.q * (1 + mmr))
                     if ph[t, c] >= liq:
                         p.value_before_event = p.value(so[t, c], po[t, c])
                         p.hedged = False
@@ -315,6 +354,9 @@ class Engine:
                 if risk.stop_move is not None and abs(pc[t, c] / p.open_price - 1) > risk.stop_move:
                     forced[c] = "stop"
                     continue
+                if p.auto_added > 0:              # reserve was used: re-balance and refill it
+                    forced[c] = "rebalance"
+                    continue
                 if risk.liq_guard is not None and pc[t, c] > p.ref_price:
                     # How much of the way from the last (re)balance price to the liquidation price
                     # has the price already covered? Act once it passes liq_guard (e.g. 0.7 = 70%).
@@ -328,6 +370,8 @@ class Engine:
                         abs(pc[t, c] / p.ref_price - 1) > risk.rebalance_drift:
                     forced[c] = "rebalance"
             targets = strategy.decide(t, self.tradable[t])
+            if targets is not None:
+                last_targets = targets
             orders = (targets, forced) if (targets is not None or forced) else None
 
         # positions still open at the end are reported (not closed) so totals stay honest

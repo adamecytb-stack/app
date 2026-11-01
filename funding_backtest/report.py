@@ -125,6 +125,52 @@ def worst_events(results, n: int = 10) -> pd.DataFrame:
                "slippage", "price_move", "hours"]].reset_index(drop=True)
 
 
+def yearly_breakdown(results, bt) -> pd.DataFrame:
+    """One row per strategy and calendar year: balance, profit ($ and %), funding, costs, risk."""
+    rows = []
+    idx = results[0].equity.index
+    sv = savings_curve(idx, bt)
+    for name, eq, res in [(r.name, r.equity, r) for r in results] + [(sv.name, sv, None)]:
+        for y in sorted(set(eq.index.year)):
+            e = eq[eq.index.year == y]
+            i0 = eq.index.get_loc(e.index[0])
+            start = float(eq.iloc[i0 - 1]) if i0 > 0 else bt.initial_capital
+            end = float(e.iloc[-1])
+            curve = pd.concat([pd.Series([start]), e.reset_index(drop=True)])
+            row = {"strategy": name, "year": int(y), "months": round(len(e) / 730),
+                   "start": start, "end": end, "profit": end - start, "profit_pct": end / start - 1,
+                   "max_dd": float((curve / curve.cummax() - 1).min())}
+            if res is not None:
+                fl = res.flows[res.flows.index.year == y]
+                ev = res.events
+                n_liq = int(((ev["cause"] == "liquidation") & (ev["time"].dt.year == y)).sum()) if len(ev) else 0
+                row.update(funding=float(fl["funding"].sum()), costs=float(fl["costs"].sum()),
+                           liquidations=n_liq,
+                           exposure=float(res.deployed[res.deployed.index.year == y].mean()))
+            else:
+                row.update(funding=0.0, costs=0.0, liquidations=0, exposure=0.0)
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def rolling_12m(results, bt) -> pd.DataFrame:
+    """Distribution of 12-month returns over every start day: how good or bad can a year get?"""
+    idx = results[0].equity.index
+    series = [(r.name, r.equity) for r in results]
+    sv = savings_curve(idx, bt)
+    series.append((sv.name, sv))
+    rows = []
+    for name, eq in series:
+        d = eq.resample("1D").last()
+        ret = (d / d.shift(365) - 1).dropna()
+        q = ret.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
+        rows.append({"strategy": name, "windows": len(ret), "worst": ret.min(), "p5": q[0.05],
+                     "p25": q[0.25], "median": q[0.5], "p75": q[0.75], "p95": q[0.95],
+                     "best": ret.max(), "share_negative": float((ret < 0).mean()),
+                     "share_below_savings": float((ret < bt.savings_apy - 1e-9).mean())})
+    return pd.DataFrame(rows)
+
+
 # --------------------------------------------------------------------------- outputs
 def equity_png(results, bt, path):
     fig, (ax, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
@@ -192,6 +238,27 @@ def print_report(results, bt, out_dir):
             w[c] = w[c].map(lambda v: f"${v:,.0f}")
         w["price_move"] = w["price_move"].map(lambda v: f"{v:+.1%}")
         lines.append(w.to_markdown(index=False))
+    years = yearly_breakdown(results, bt)
+    roll = rolling_12m(results, bt)
+    yb = years.copy()
+    yb["year"] = yb.apply(lambda r: f"{r['year']}" + ("" if r["months"] >= 12 else f" ({r['months']} mo)"), axis=1)
+    for c in ["start", "end", "profit", "funding", "costs"]:
+        yb[c] = yb[c].map(lambda v: f"${v:,.0f}")
+    for c in ["profit_pct", "max_dd", "exposure"]:
+        yb[c] = yb[c].map(lambda v: f"{v:+.1%}" if c == "profit_pct" else f"{v:.1%}")
+    yb = yb.drop(columns=["months"]).rename(columns={
+        "profit_pct": "profit %", "max_dd": "max DD", "liquidations": "liq."})
+    rb = roll.copy()
+    for c in ["worst", "p5", "p25", "median", "p75", "p95", "best"]:
+        rb[c] = rb[c].map(lambda v: f"{v:+.1%}")
+    for c in ["share_negative", "share_below_savings"]:
+        rb[c] = rb[c].map(lambda v: f"{v:.0%}")
+    rb = rb.rename(columns={"share_negative": "12m windows < 0", "share_below_savings": "12m windows < savings"})
+    lines += ["", "## Year by year (every strategy)", "", yb.to_markdown(index=False), "",
+              "## 12-month return distribution", "",
+              "Return over every 12-month window (one per start day). p5 = only 5% of 12-month "
+              "periods were worse than this; median = a typical year; p95 = only 5% were better.", "",
+              rb.to_markdown(index=False)]
     lines += ["", "## Notes", "", SURVIVORSHIP_NOTE, ""]
     text = "\n".join(lines)
     print(text)
@@ -199,7 +266,9 @@ def print_report(results, bt, out_dir):
     summ.to_csv(out_dir / "summary.csv")
     per.to_csv(out_dir / "periods.csv", index=False)
     worst.to_csv(out_dir / "worst_events.csv", index=False)
-    return summ, per, worst
+    years.to_csv(out_dir / "yearly_breakdown.csv", index=False)
+    roll.to_csv(out_dir / "rolling_12m.csv", index=False)
+    return summ, per, worst, years, roll
 
 
 def _clean(v):
@@ -217,7 +286,8 @@ def _records(df: pd.DataFrame) -> list[dict]:
 
 
 def write_dashboard_data(results, bt, panel, summ, per, worst, grid: pd.DataFrame | None, docs_dir,
-                         optimizer: pd.DataFrame | None = None, optimizer_basket: pd.DataFrame | None = None):
+                         optimizer: pd.DataFrame | None = None, optimizer_basket: pd.DataFrame | None = None,
+                         years: pd.DataFrame | None = None, roll: pd.DataFrame | None = None):
     """Write docs/data.js (loaded by docs/index.html). Daily equity keeps the file small."""
     daily = pd.DataFrame({r.name: r.equity.resample("1D").last() for r in results})
     sv = savings_curve(results[0].equity.index, bt).resample("1D").last()
@@ -247,6 +317,8 @@ def write_dashboard_data(results, bt, panel, summ, per, worst, grid: pd.DataFram
                     for k, row in summ.iterrows()],
         "periods": _records(per),
         "worst": _records(worst) if len(worst) else [],
+        "years": _records(years) if years is not None else [],
+        "rolling12": _records(roll) if roll is not None else [],
         "events": _records(ev) if len(ev) else [],
         "grid": _records(grid) if grid is not None and len(grid) else [],
         "optimizer": _records(optimizer) if optimizer is not None and len(optimizer) else [],

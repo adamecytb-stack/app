@@ -87,7 +87,7 @@ def main():
         results.append(engine.run(strat, risk))
         print(f"ran {strat.name} in {time.time() - t0:.1f}s")
 
-    summ, per, worst = report.print_report(results, bt, bt.output_dir)
+    summ, per, worst, years, roll = report.print_report(results, bt, bt.output_dir)
     report.equity_png(results, bt, bt.output_dir / "equity.png")
     print(f"\nWrote {bt.output_dir / 'equity.png'}")
 
@@ -111,7 +111,8 @@ def main():
         opt_path, bopt_path = bt.output_dir / "optimize_results.csv", bt.output_dir / "optimize_basket.csv"
         opt = pd.read_csv(opt_path) if opt_path.exists() else None
         bopt = pd.read_csv(bopt_path) if bopt_path.exists() else None
-        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir, opt, bopt)
+        report.write_dashboard_data(results, bt, panel, summ, per, worst, grid, bt.docs_dir, opt, bopt,
+                                    years, roll)
         print(f"Wrote {bt.docs_dir / 'data.js'} (open docs/index.html)")
 
 
